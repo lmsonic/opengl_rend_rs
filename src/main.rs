@@ -6,18 +6,21 @@ mod vertex_attributes;
 use std::ptr;
 
 use buffer::Buffer;
+use gl::types::GLsizei;
 use opengl::OpenGl;
 use program::Program;
 use vertex_attributes::{Type, VertexAttribute};
 use winit::application::ApplicationHandler;
+use winit::dpi::PhysicalSize;
 use winit::event::{KeyEvent, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
 
 pub trait Framework {
-    fn new() -> App;
+    fn new() -> Self;
     fn display(&mut self) {}
     fn keyboard(&mut self, event: KeyEvent) {}
+    fn reshape(&mut self, size: PhysicalSize<u32>) {}
 }
 
 type GLHandle = gl::types::GLuint;
@@ -57,15 +60,20 @@ impl Framework for App {
     }
 
     fn keyboard(&mut self, event: KeyEvent) {}
+
+    fn reshape(&mut self, size: PhysicalSize<u32>) {
+        self.gl
+            .viewport(0, 0, size.width as GLsizei, size.height as GLsizei);
+    }
 }
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        self.window = Some(
-            event_loop
-                .create_window(Window::default_attributes())
-                .unwrap(),
-        );
+        let window = event_loop
+            .create_window(Window::default_attributes())
+            .unwrap();
+
+        self.window = Some(window);
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
@@ -75,6 +83,7 @@ impl ApplicationHandler for App {
             }
         }
         match event {
+            WindowEvent::Resized(size) => self.reshape(size),
             WindowEvent::CloseRequested => {
                 println!("The close button was pressed; stopping");
                 event_loop.exit();

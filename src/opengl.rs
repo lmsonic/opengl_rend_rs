@@ -13,4 +13,10 @@ impl OpenGl {
     pub fn draw_arrays(&mut self, mode: GLenum, first: GLint, count: GLsizei) {
         unsafe { gl::DrawArrays(gl::TRIANGLES, 0, 3) };
     }
+
+    pub fn viewport(&self, x: GLsizei, y: GLsizei, width: GLsizei, height: GLsizei) {
+        unsafe {
+            gl::Viewport(x, y, width, height);
+        }
+    }
 }
