@@ -1,0 +1,8 @@
+[package]
+name = "learn-modern-3d-graphics"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+gl = "0.14.0"
+winit = "0.30.9"
