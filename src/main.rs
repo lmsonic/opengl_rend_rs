@@ -20,7 +20,6 @@ type GLHandle = gl::types::GLuint;
 struct App {
     gl: OpenGl,
     program: Program,
-    vertex_buffer: Buffer<f32>,
     vertex_array_object: VertexArrayObject,
 }
 
@@ -28,30 +27,37 @@ const VERTEX_POSITIONS: [f32; 12] = [
     0.75, 0.75, 0.0, 1.0, 0.75, -0.75, 0.0, 1.0, -0.75, -0.75, 0.0, 1.0,
 ];
 
+// fn glDebugOutput( source : GLE,
+//     GLenum type,
+//     unsigned int id,
+//     GLenum severity,
+//     GLsizei length,
+//     const char *message,
+//     const void *userParam)
+// {}
+
 impl App {
     fn new(window: &mut Window) -> App {
         gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
+        // gl::DebugMessageCallback()
         let vert_str = CString::new(include_str!("vert.glsl")).unwrap();
         let frag_str = CString::new(include_str!("frag.glsl")).unwrap();
         let vert_shader = Shader::new(&vert_str, ShaderType::Vertex).unwrap();
         let frag_shader = Shader::new(&frag_str, ShaderType::Fragment).unwrap();
         let program = Program::new(&[vert_shader, frag_shader]).unwrap();
+
         let mut vertex_buffer = Buffer::new(BufferType::ArrayBuffer);
         vertex_buffer.buffer_data(&VERTEX_POSITIONS, Usage::StaticDraw);
 
         let mut vertex_array_object = VertexArrayObject::new();
         let vertex_attribute = VertexAttribute::new(4, DataType::Float, false);
-        // vertex_buffer.bind();
-        vertex_array_object.bind();
         vertex_array_object.set_attribute(0, &vertex_attribute, 0, 0);
-        // vertex_buffer.unbind();
+        // vertex_array_object.unbind();
 
         unsafe { gl::PolygonMode(gl::FRONT_AND_BACK, gl::LINE) };
-
         Self {
             gl: OpenGl,
             program,
-            vertex_buffer,
             vertex_array_object,
         }
     }
@@ -64,7 +70,9 @@ impl App {
 
         self.vertex_array_object.bind();
 
+        dbg!("before draw");
         self.gl.draw_arrays(gl::TRIANGLES, 0, 3);
+        dbg!("after draw");
 
         self.program.set_unused();
     }
@@ -78,10 +86,11 @@ impl App {
 
 fn main() {
     let mut glfw = glfw::init(fail_on_errors!()).unwrap();
-    glfw.window_hint(glfw::WindowHint::ContextVersion(3, 3));
+    glfw.window_hint(glfw::WindowHint::ContextVersion(4, 3));
     glfw.window_hint(glfw::WindowHint::OpenGlProfile(
         glfw::OpenGlProfileHint::Core,
     ));
+    glfw.window_hint(glfw::WindowHint::OpenGlDebugContext(true));
 
     // Create a windowed mode window and its OpenGL context
     let (mut window, events) = glfw

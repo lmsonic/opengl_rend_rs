@@ -19,12 +19,9 @@ pub enum DataType {
 }
 
 pub struct VertexAttribute {
-    // index: GLuint,
     size: GLint,
     data_type: DataType,
     normalized: bool,
-    // stride: GLsizei,
-    // pointer: *const c_void,
 }
 
 impl VertexAttribute {
@@ -67,38 +64,28 @@ impl VertexArrayObject {
     }
     pub fn set_attribute(
         &mut self,
-        index: GLuint,
+        location: GLuint,
         attribute: &VertexAttribute,
         stride: GLint,
-        offset: GLsizei,
+        offset: GLint,
     ) {
-        let size = attribute.size;
-        let data_type = attribute.data_type;
-        let normalized = if attribute.normalized {
-            gl::TRUE
-        } else {
-            gl::FALSE
-        };
-
-        // Compute the attribute pointer
-        let pointer = std::ptr::null_mut::<u8>(); // Actual base pointer is in VBO
-        let pointer = pointer.wrapping_add(offset as usize) as *const c_void; // Set the VertexAttribute pointer in this location
-
-        if attribute.normalized || attribute.is_floating_point() {
-            unsafe {
-                gl::VertexAttribPointer(
-                    index,
-                    size,
-                    data_type as GLenum,
-                    normalized,
-                    stride,
-                    pointer,
-                )
-            }
-        } else {
-            unsafe { gl::VertexAttribIPointer(index, size, data_type as GLenum, stride, pointer) }
+        self.bind();
+        unsafe {
+            gl::VertexAttribPointer(
+                location,
+                attribute.size,
+                attribute.data_type as GLenum,
+                if attribute.normalized {
+                    gl::TRUE
+                } else {
+                    gl::FALSE
+                },
+                stride,
+                offset as *const _,
+            )
         }
+
         // Finally, we enable the VertexAttribute in this location
-        unsafe { gl::EnableVertexAttribArray(index) };
+        unsafe { gl::EnableVertexAttribArray(location) };
     }
 }

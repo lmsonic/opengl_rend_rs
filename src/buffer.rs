@@ -1,6 +1,6 @@
 use std::{marker::PhantomData, os::raw::c_void};
 
-use gl::types::{GLboolean, GLenum};
+use gl::types::{GLboolean, GLenum, GLsizeiptr};
 
 use crate::{vertex_attributes::VertexAttribute, GLHandle, NULL_HANDLE};
 
@@ -27,7 +27,7 @@ pub enum Usage {
 
 pub struct Buffer<T> {
     id: GLHandle,
-    kind: BufferType,
+    target: BufferType,
     phantom: PhantomData<T>,
 }
 
@@ -43,7 +43,7 @@ impl<T> Buffer<T> {
         unsafe { gl::GenBuffers(1, &mut id) };
         Self {
             id,
-            kind,
+            target: kind,
             phantom: PhantomData,
         }
     }
@@ -57,20 +57,21 @@ impl<T> Buffer<T> {
     }
 
     pub fn buffer_data(&mut self, data: &[T], usage: Usage) {
+        let (_, data_bytes, _) = unsafe { data.align_to::<u8>() };
         unsafe {
             gl::BufferData(
-                self.kind as GLenum,
-                std::mem::size_of_val(data) as isize,
-                data.as_ptr() as *const c_void,
+                self.target as GLenum,
+                data_bytes.len() as GLsizeiptr,
+                data.as_ptr() as *const _,
                 usage as GLenum,
             )
         };
     }
 
     pub fn bind(&mut self) {
-        unsafe { gl::BindBuffer(self.kind as GLenum, self.id) };
+        unsafe { gl::BindBuffer(self.target as GLenum, self.id) };
     }
     pub fn unbind(&mut self) {
-        unsafe { gl::BindBuffer(self.kind as GLenum, NULL_HANDLE) };
+        unsafe { gl::BindBuffer(self.target as GLenum, NULL_HANDLE) };
     }
 }
