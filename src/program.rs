@@ -11,6 +11,12 @@ pub struct Program {
     id: GLHandle,
 }
 
+impl Drop for Program {
+    fn drop(&mut self) {
+        unsafe { gl::DeleteProgram(self.id) }
+    }
+}
+
 impl Program {
     pub fn new(shaders: &[Shader]) -> Result<Self, CString> {
         let id = unsafe { gl::CreateProgram() };

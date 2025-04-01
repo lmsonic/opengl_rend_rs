@@ -6,13 +6,14 @@ mod vertex_attributes;
 use std::ffi::CString;
 use std::ptr;
 
-use buffer::{Buffer, BufferType};
+use buffer::{Buffer, BufferType, Usage};
 use gl::types::GLsizei;
 use glfw::{fail_on_errors, Window};
 use glfw::{Action, Context, Key, Modifiers};
 use opengl::OpenGl;
 use program::{Program, Shader, ShaderType};
-use vertex_attributes::{DataType, VertexAttribute};
+use vertex_attributes::{DataType, VertexArrayObject, VertexAttribute};
+const NULL_HANDLE: GLHandle = 0;
 
 type GLHandle = gl::types::GLuint;
 
@@ -20,6 +21,7 @@ struct App {
     gl: OpenGl,
     program: Program,
     vertex_buffer: Buffer<f32>,
+    vertex_array_object: VertexArrayObject,
 }
 
 const VERTEX_POSITIONS: [f32; 12] = [
@@ -34,30 +36,35 @@ impl App {
         let vert_shader = Shader::new(&vert_str, ShaderType::Vertex).unwrap();
         let frag_shader = Shader::new(&frag_str, ShaderType::Fragment).unwrap();
         let program = Program::new(&[vert_shader, frag_shader]).unwrap();
+        let mut vertex_buffer = Buffer::new(BufferType::ArrayBuffer);
+        vertex_buffer.buffer_data(&VERTEX_POSITIONS, Usage::StaticDraw);
 
-        let vertex_buffer = Buffer::with_data(BufferType::ArrayBuffer, &VERTEX_POSITIONS);
+        let mut vertex_array_object = VertexArrayObject::new();
+        let vertex_attribute = VertexAttribute::new(4, DataType::Float, false);
+        // vertex_buffer.bind();
+        vertex_array_object.bind();
+        vertex_array_object.set_attribute(0, &vertex_attribute, 0, 0);
+        // vertex_buffer.unbind();
+
+        unsafe { gl::PolygonMode(gl::FRONT_AND_BACK, gl::LINE) };
+
         Self {
             gl: OpenGl,
             program,
             vertex_buffer,
+            vertex_array_object,
         }
     }
 
     fn display(&mut self) {
-        self.gl.clear_color(0.0, 0.0, 0.0, 0.0);
+        self.gl.clear_color(0.1, 0.2, 0.3, 0.0);
         self.gl.clear(gl::COLOR_BUFFER_BIT);
 
         self.program.set_used();
 
-        self.vertex_buffer.bind();
-
-        let vertex_attribute =
-            VertexAttribute::new(0, 4, DataType::Float, gl::FALSE, 0, ptr::null());
-        vertex_attribute.enable();
-        vertex_attribute.create();
+        self.vertex_array_object.bind();
 
         self.gl.draw_arrays(gl::TRIANGLES, 0, 3);
-        vertex_attribute.disable();
 
         self.program.set_unused();
     }
@@ -78,7 +85,7 @@ fn main() {
 
     // Create a windowed mode window and its OpenGL context
     let (mut window, events) = glfw
-        .create_window(300, 300, "Hello this is window", glfw::WindowMode::Windowed)
+        .create_window(600, 600, "OpenGl", glfw::WindowMode::Windowed)
         .expect("Failed to create GLFW window.");
 
     // Make the window's context current

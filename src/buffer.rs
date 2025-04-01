@@ -1,8 +1,8 @@
 use std::{marker::PhantomData, os::raw::c_void};
 
-use gl::types::GLenum;
+use gl::types::{GLboolean, GLenum};
 
-use crate::GLHandle;
+use crate::{vertex_attributes::VertexAttribute, GLHandle, NULL_HANDLE};
 
 #[derive(Clone, Copy)]
 #[repr(u32)]
@@ -25,16 +25,20 @@ pub enum Usage {
     DynamicCopy = gl::DYNAMIC_COPY,
 }
 
-const NULL_HANDLE: GLHandle = 0;
-
 pub struct Buffer<T> {
     id: GLHandle,
     kind: BufferType,
     phantom: PhantomData<T>,
 }
 
+impl<T> Drop for Buffer<T> {
+    fn drop(&mut self) {
+        unsafe { gl::DeleteBuffers(1, &self.id) }
+    }
+}
+
 impl<T> Buffer<T> {
-    pub fn empty(kind: BufferType) -> Self {
+    pub fn new(kind: BufferType) -> Self {
         let mut id = NULL_HANDLE;
         unsafe { gl::GenBuffers(1, &mut id) };
         Self {
@@ -45,7 +49,7 @@ impl<T> Buffer<T> {
     }
 
     pub fn with_data(kind: BufferType, data: &[T]) -> Self {
-        let mut buffer = Self::empty(kind);
+        let mut buffer = Self::new(kind);
         buffer.bind();
         buffer.buffer_data(data, Usage::StaticDraw);
         buffer.unbind();
@@ -67,6 +71,6 @@ impl<T> Buffer<T> {
         unsafe { gl::BindBuffer(self.kind as GLenum, self.id) };
     }
     pub fn unbind(&mut self) {
-        unsafe { gl::BindBuffer(self.kind as GLenum, self.id) };
+        unsafe { gl::BindBuffer(self.kind as GLenum, NULL_HANDLE) };
     }
 }
