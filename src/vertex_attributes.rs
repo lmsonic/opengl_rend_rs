@@ -4,7 +4,7 @@ use gl::types::{GLboolean, GLenum, GLint, GLsizei, GLuint};
 
 #[derive(Clone, Copy)]
 #[repr(u32)]
-pub enum Type {
+pub enum DataType {
     Byte = gl::BYTE,
     UnsignedByte = gl::UNSIGNED_BYTE,
     Short = gl::SHORT,
@@ -19,7 +19,7 @@ pub enum Type {
 pub struct VertexAttribute {
     index: GLuint,
     size: GLint,
-    type_: Type,
+    type_: DataType,
     normalized: GLboolean,
     stride: GLsizei,
     pointer: *const c_void,
@@ -29,7 +29,7 @@ impl VertexAttribute {
     pub fn new(
         index: GLuint,
         size: GLint,
-        type_: Type,
+        type_: DataType,
         normalized: GLboolean,
         stride: GLsizei,
         pointer: *const c_void,

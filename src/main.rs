@@ -3,30 +3,20 @@ mod opengl;
 mod program;
 mod vertex_attributes;
 
+use std::ffi::CString;
 use std::ptr;
 
-use buffer::Buffer;
+use buffer::{Buffer, BufferType};
 use gl::types::GLsizei;
+use glfw::{fail_on_errors, Window};
+use glfw::{Action, Context, Key, Modifiers};
 use opengl::OpenGl;
-use program::Program;
-use vertex_attributes::{Type, VertexAttribute};
-use winit::application::ApplicationHandler;
-use winit::dpi::PhysicalSize;
-use winit::event::{KeyEvent, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
-use winit::window::{Window, WindowId};
-
-pub trait Framework {
-    fn new() -> Self;
-    fn display(&mut self) {}
-    fn keyboard(&mut self, event: KeyEvent) {}
-    fn reshape(&mut self, size: PhysicalSize<u32>) {}
-}
+use program::{Program, Shader, ShaderType};
+use vertex_attributes::{DataType, VertexAttribute};
 
 type GLHandle = gl::types::GLuint;
 
 struct App {
-    window: Option<Window>,
     gl: OpenGl,
     program: Program,
     vertex_buffer: Buffer<f32>,
@@ -36,9 +26,21 @@ const VERTEX_POSITIONS: [f32; 12] = [
     0.75, 0.75, 0.0, 1.0, 0.75, -0.75, 0.0, 1.0, -0.75, -0.75, 0.0, 1.0,
 ];
 
-impl Framework for App {
-    fn new() -> App {
-        todo!()
+impl App {
+    fn new(window: &mut Window) -> App {
+        gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
+        let vert_str = CString::new(include_str!("vert.glsl")).unwrap();
+        let frag_str = CString::new(include_str!("frag.glsl")).unwrap();
+        let vert_shader = Shader::new(&vert_str, ShaderType::Vertex).unwrap();
+        let frag_shader = Shader::new(&frag_str, ShaderType::Fragment).unwrap();
+        let program = Program::new(&[vert_shader, frag_shader]).unwrap();
+
+        let vertex_buffer = Buffer::with_data(BufferType::ArrayBuffer, &VERTEX_POSITIONS);
+        Self {
+            gl: OpenGl,
+            program,
+            vertex_buffer,
+        }
     }
 
     fn display(&mut self) {
@@ -49,7 +51,8 @@ impl Framework for App {
 
         self.vertex_buffer.bind();
 
-        let vertex_attribute = VertexAttribute::new(0, 4, Type::Float, gl::FALSE, 0, ptr::null());
+        let vertex_attribute =
+            VertexAttribute::new(0, 4, DataType::Float, gl::FALSE, 0, ptr::null());
         vertex_attribute.enable();
         vertex_attribute.create();
 
@@ -59,66 +62,56 @@ impl Framework for App {
         self.program.set_unused();
     }
 
-    fn keyboard(&mut self, event: KeyEvent) {}
+    fn keyboard(&mut self, key: Key, action: Action, modifier: Modifiers) {}
 
-    fn reshape(&mut self, size: PhysicalSize<u32>) {
-        self.gl
-            .viewport(0, 0, size.width as GLsizei, size.height as GLsizei);
+    fn reshape(&mut self, width: i32, height: i32) {
+        self.gl.viewport(0, 0, width as GLsizei, height as GLsizei);
     }
 }
 
-impl ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let window = event_loop
-            .create_window(Window::default_attributes())
-            .unwrap();
+fn main() {
+    let mut glfw = glfw::init(fail_on_errors!()).unwrap();
+    glfw.window_hint(glfw::WindowHint::ContextVersion(3, 3));
+    glfw.window_hint(glfw::WindowHint::OpenGlProfile(
+        glfw::OpenGlProfileHint::Core,
+    ));
 
-        self.window = Some(window);
-    }
+    // Create a windowed mode window and its OpenGL context
+    let (mut window, events) = glfw
+        .create_window(300, 300, "Hello this is window", glfw::WindowMode::Windowed)
+        .expect("Failed to create GLFW window.");
 
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
-        if let Some(window) = &self.window {
-            if window.id() != id {
-                return;
+    // Make the window's context current
+    window.make_current();
+    window.set_key_polling(true);
+    window.set_framebuffer_size_polling(true);
+
+    let mut app = App::new(&mut window);
+
+    // Loop until the user closes the window
+    while !window.should_close() {
+        // process events
+        for (_, event) in glfw::flush_messages(&events) {
+            match event {
+                glfw::WindowEvent::Key(Key::Escape, _, Action::Press, _) => {
+                    window.set_should_close(true)
+                }
+                glfw::WindowEvent::Key(key, _, action, modifier) => {
+                    app.keyboard(key, action, modifier)
+                }
+
+                glfw::WindowEvent::FramebufferSize(width, height) => app.reshape(width, height),
+                _ => {}
             }
         }
-        match event {
-            WindowEvent::Resized(size) => self.reshape(size),
-            WindowEvent::CloseRequested => {
-                println!("The close button was pressed; stopping");
-                event_loop.exit();
-            }
-            WindowEvent::RedrawRequested => {
-                // Redraw the application.
-                //
-                // It's preferable for applications that do not render continuously to render in
-                // this event rather than in AboutToWait, since rendering in here allows
-                // the program to gracefully handle redraws requested by the OS.
 
-                // Draw.
-                self.display();
-                // Queue a RedrawRequested event.
-                //
-                // You only need to call this if you've determined that you need to redraw in
-                // applications which do not always need to. Applications that redraw continuously
-                // can render here instead.
-                self.window.as_ref().unwrap().request_redraw();
-            }
-            WindowEvent::KeyboardInput { event, .. } => {
-                self.keyboard(event);
-            }
-            _ => (),
-        }
+        // render
+        app.display();
+
+        // Swap front and back buffers
+        window.swap_buffers();
+
+        // Poll for and process events
+        glfw.poll_events();
     }
-}
-
-fn main() -> Result<(), winit::error::EventLoopError> {
-    let event_loop = EventLoop::new().unwrap();
-
-    // ControlFlow::Poll continuously runs the event loop, even if the OS hasn't
-    // dispatched any events. This is ideal for games and similar applications.
-    event_loop.set_control_flow(ControlFlow::Poll);
-
-    let mut app = App::new();
-    event_loop.run_app(&mut app)
 }
