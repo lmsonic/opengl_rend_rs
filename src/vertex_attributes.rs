@@ -55,34 +55,55 @@ impl VertexArrayObject {
         unsafe { gl::GenVertexArrays(1, &mut id) };
         Self { id }
     }
-    pub fn bind(&self) {
+    pub fn bind(&mut self) {
         unsafe { gl::BindVertexArray(self.id) };
     }
 
-    pub fn unbind(&self) {
+    pub fn unbind(&mut self) {
         unsafe { gl::BindVertexArray(NULL_HANDLE) };
     }
     pub fn set_attribute(
         &mut self,
         location: GLuint,
         attribute: &VertexAttribute,
-        stride: GLint,
         offset: GLint,
+        stride: GLsizei,
     ) {
-        self.bind();
-        unsafe {
-            gl::VertexAttribPointer(
-                location,
-                attribute.size,
-                attribute.data_type as GLenum,
-                if attribute.normalized {
-                    gl::TRUE
-                } else {
-                    gl::FALSE
-                },
-                stride,
-                offset as *const _,
-            )
+        // Set the VertexAttribute pointer in this location
+
+        let components = attribute.size;
+        let data_type = attribute.data_type as GLenum;
+        let normalized = if attribute.normalized {
+            gl::TRUE
+        } else {
+            gl::FALSE
+        };
+
+        // Compute the attribute pointer
+        let mut pointer = std::ptr::null_mut::<u8>(); // Actual base pointer is in VBO
+        pointer = pointer.wrapping_add(offset as usize);
+
+        if attribute.is_floating_point() || attribute.normalized {
+            unsafe {
+                gl::VertexAttribPointer(
+                    location,
+                    components,
+                    data_type,
+                    normalized,
+                    stride,
+                    pointer as *const c_void,
+                );
+            };
+        } else {
+            unsafe {
+                gl::VertexAttribIPointer(
+                    location,
+                    components,
+                    data_type,
+                    stride,
+                    pointer as *const c_void,
+                )
+            };
         }
 
         // Finally, we enable the VertexAttribute in this location

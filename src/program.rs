@@ -96,7 +96,7 @@ impl Shader {
                 gl::GetShaderiv(self.id, gl::INFO_LOG_LENGTH, &mut len);
             }
             // convert buffer to CString
-            let error: CString = create_whitespace_cstring_with_len(len as usize);
+            let error = create_whitespace_cstring_with_len(len as usize);
             unsafe {
                 gl::GetShaderInfoLog(
                     self.id,

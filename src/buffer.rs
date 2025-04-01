@@ -38,12 +38,12 @@ impl<T> Drop for Buffer<T> {
 }
 
 impl<T> Buffer<T> {
-    pub fn new(kind: BufferType) -> Self {
+    pub fn new(target: BufferType) -> Self {
         let mut id = NULL_HANDLE;
         unsafe { gl::GenBuffers(1, &mut id) };
         Self {
             id,
-            target: kind,
+            target,
             phantom: PhantomData,
         }
     }
