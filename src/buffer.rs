@@ -48,20 +48,11 @@ impl<T> Buffer<T> {
         }
     }
 
-    pub fn with_data(kind: BufferType, data: &[T]) -> Self {
-        let mut buffer = Self::new(kind);
-        buffer.bind();
-        buffer.buffer_data(data, Usage::StaticDraw);
-        buffer.unbind();
-        buffer
-    }
-
     pub fn buffer_data(&mut self, data: &[T], usage: Usage) {
-        let (_, data_bytes, _) = unsafe { data.align_to::<u8>() };
         unsafe {
             gl::BufferData(
                 self.target as GLenum,
-                data_bytes.len() as GLsizeiptr,
+                std::mem::size_of_val(data) as isize,
                 data.as_ptr() as *const _,
                 usage as GLenum,
             )

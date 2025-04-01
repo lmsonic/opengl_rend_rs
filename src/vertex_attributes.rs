@@ -18,19 +18,36 @@ pub enum DataType {
     Fixed = gl::FIXED,
 }
 
+impl DataType {
+    fn size(&self) -> usize {
+        match self {
+            DataType::Byte | DataType::UnsignedByte => 1,
+            DataType::Short | DataType::UnsignedShort => 2,
+            DataType::Int | DataType::UnsignedInt => 4,
+            DataType::Double => 8,
+            DataType::Float => 4,
+            DataType::Fixed => 2,
+        }
+    }
+}
+
 pub struct VertexAttribute {
-    size: GLint,
+    components: GLint,
     data_type: DataType,
     normalized: bool,
 }
 
 impl VertexAttribute {
-    pub fn new(size: GLint, data_type: DataType, normalized: bool) -> Self {
+    pub fn new(components: GLint, data_type: DataType, normalized: bool) -> Self {
         Self {
-            size,
+            components,
             data_type,
             normalized,
         }
+    }
+
+    pub fn size(&self) -> usize {
+        self.data_type.size() * self.components as usize
     }
 
     pub fn is_floating_point(&self) -> bool {
@@ -66,12 +83,12 @@ impl VertexArrayObject {
         &mut self,
         location: GLuint,
         attribute: &VertexAttribute,
-        offset: GLint,
         stride: GLsizei,
+        offset: GLint,
     ) {
         // Set the VertexAttribute pointer in this location
 
-        let components = attribute.size;
+        let components = attribute.components;
         let data_type = attribute.data_type as GLenum;
         let normalized = if attribute.normalized {
             gl::TRUE
@@ -79,9 +96,10 @@ impl VertexArrayObject {
             gl::FALSE
         };
 
-        // Compute the attribute pointer
-        let mut pointer = std::ptr::null_mut::<u8>(); // Actual base pointer is in VBO
-        pointer = pointer.wrapping_add(offset as usize);
+        // // Compute the attribute pointer
+        // let mut pointer = std::ptr::null_mut::<u8>(); // Actual base pointer is in VBO
+        // pointer = pointer.wrapping_add(offset as usize);
+        let pointer = offset;
 
         if attribute.is_floating_point() || attribute.normalized {
             unsafe {

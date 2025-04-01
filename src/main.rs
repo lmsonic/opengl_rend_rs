@@ -25,63 +25,21 @@ struct App {
     vertex_buffer: Buffer<f32>,
 }
 
-const VERTEX_POSITIONS: [f32; 12] = [
-    0.75, 0.75, 0.0, 1.0, 0.75, -0.75, 0.0, 1.0, -0.75, -0.75, 0.0, 1.0,
+#[rustfmt::skip]
+const VERTEX_DATA: [f32; 24] = [
+    0.0, 0.5, 0.0, 1.0, 
+    0.5, -0.366, 0.0, 1.0,
+    -0.5, -0.366, 0.0, 1.0,
+    1.0, 0.0, 0.0, 1.0,
+    0.0, 1.0, 0.0, 1.0,
+    0.0, 0.0, 1.0, 1.0,
 ];
-
-extern "system" fn gl_debug_output(
-    source: GLenum,
-    type_: GLenum,
-    id: GLuint,
-    severity: GLenum,
-    _length: GLsizei,
-    message: *const GLchar,
-    user_param: *mut c_void,
-) {
-    if id == 131169 || id == 131185 || id == 131218 || id == 131204 {
-        return;
-    }
-    let message = unsafe { CStr::from_ptr(message) }.to_string_lossy();
-
-    println!("------------");
-    println!("Debug message ({id}) : {message:?} ");
-
-    match source {
-        gl::DEBUG_SOURCE_API => println!("Source: API"),
-        gl::DEBUG_SOURCE_WINDOW_SYSTEM => println!("Source: Window System"),
-        gl::DEBUG_SOURCE_SHADER_COMPILER => println!("Source: Shader Compiler"),
-        gl::DEBUG_SOURCE_THIRD_PARTY => println!("Source: Third Party"),
-        gl::DEBUG_SOURCE_APPLICATION => println!("Source: Application"),
-        gl::DEBUG_SOURCE_OTHER => println!("Source: Other"),
-        _ => {}
-    }
-    match type_ {
-        gl::DEBUG_TYPE_ERROR => println!("Type: Error"),
-        gl::DEBUG_TYPE_DEPRECATED_BEHAVIOR => println!("Type: Deprecated Behaviour"),
-        gl::DEBUG_TYPE_UNDEFINED_BEHAVIOR => println!("Type: Undefined Behaviour"),
-        gl::DEBUG_TYPE_PORTABILITY => println!("Type: Portability"),
-        gl::DEBUG_TYPE_PERFORMANCE => println!("Type: Performance"),
-        gl::DEBUG_TYPE_MARKER => println!("Type: Marker"),
-        gl::DEBUG_TYPE_PUSH_GROUP => println!("Type: Push Group"),
-        gl::DEBUG_TYPE_POP_GROUP => println!("Type: Pop Group"),
-        gl::DEBUG_TYPE_OTHER => println!("Type: Other"),
-        _ => {}
-    }
-    match severity {
-        gl::DEBUG_SEVERITY_HIGH => println!("Severity: high"),
-        gl::DEBUG_SEVERITY_MEDIUM => println!("Severity: medium"),
-        gl::DEBUG_SEVERITY_LOW => println!("Severity: low"),
-        gl::DEBUG_SEVERITY_NOTIFICATION => println!("Severity: notification"),
-        _ => {}
-    }
-}
 
 impl App {
     fn new(window: &mut Window) -> App {
-        gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
-        let gl = OpenGl;
+        let mut gl = OpenGl::new(window);
         // gl debug context
-        setup_opengl_debug_context();
+        gl.setup_debug_context();
 
         let vert_str = CString::new(include_str!("vert.vert")).unwrap();
         let frag_str = CString::new(include_str!("frag.frag")).unwrap();
@@ -91,12 +49,14 @@ impl App {
 
         let mut vertex_buffer = Buffer::new(BufferType::ArrayBuffer);
         vertex_buffer.bind();
-        vertex_buffer.buffer_data(&VERTEX_POSITIONS, Usage::StaticDraw);
+        vertex_buffer.buffer_data(&VERTEX_DATA, Usage::StaticDraw);
 
         let mut vertex_array_object = VertexArrayObject::new();
-        let vertex_attribute = VertexAttribute::new(4, DataType::Float, false);
+        let vec4 = VertexAttribute::new(4, DataType::Float, false);
+
         vertex_array_object.bind();
-        vertex_array_object.set_attribute(0, &vertex_attribute, 0, 0);
+        vertex_array_object.set_attribute(0, &vec4, 0, 0);
+        vertex_array_object.set_attribute(1, &vec4, 0, (vec4.size() * 3) as GLsizei);
         // gl.polygon_mode(opengl::PolygonMode::Line);
         Self {
             gl,
@@ -107,7 +67,7 @@ impl App {
     }
 
     fn display(&mut self) {
-        self.gl.clear_color(0.0, 0.0, 0.0, 0.0);
+        self.gl.clear_color(0.5, 0.5, 0.5, 0.0);
         self.gl.clear(gl::COLOR_BUFFER_BIT);
 
         self.program.set_used();
@@ -122,27 +82,6 @@ impl App {
 
     fn reshape(&mut self, width: i32, height: i32) {
         self.gl.viewport(0, 0, width as GLsizei, height as GLsizei);
-    }
-}
-
-fn setup_opengl_debug_context() {
-    let mut flags = 0;
-    unsafe { gl::GetIntegerv(gl::CONTEXT_FLAGS, &mut flags) };
-    if (flags as GLenum & gl::CONTEXT_FLAG_DEBUG_BIT) != 0 {
-        // initialize debug output
-        unsafe { gl::Enable(gl::DEBUG_OUTPUT) };
-        unsafe { gl::Enable(gl::DEBUG_OUTPUT_SYNCHRONOUS) };
-        unsafe { gl::DebugMessageCallback(Some(gl_debug_output), ptr::null()) }
-        unsafe {
-            gl::DebugMessageControl(
-                gl::DONT_CARE,
-                gl::DONT_CARE,
-                gl::DONT_CARE,
-                0,
-                ptr::null(),
-                gl::TRUE,
-            )
-        };
     }
 }
 
