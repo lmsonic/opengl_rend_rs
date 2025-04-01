@@ -34,7 +34,7 @@ extern "system" fn gl_debug_output(
     type_: GLenum,
     id: GLuint,
     severity: GLenum,
-    length: GLsizei,
+    _length: GLsizei,
     message: *const GLchar,
     user_param: *mut c_void,
 ) {
@@ -76,24 +76,15 @@ extern "system" fn gl_debug_output(
     }
 }
 
-fn create_whitespace_cstring_with_len(len: usize) -> CString {
-    // allocate buffer of correct size
-    let mut buffer: Vec<u8> = Vec::with_capacity(len + 1);
-    // fill it with len spaces
-    buffer.extend(std::iter::once(&b' ').cycle().take(len));
-    // convert buffer to CString
-    unsafe { CString::from_vec_unchecked(buffer) }
-}
-
 impl App {
     fn new(window: &mut Window) -> App {
         gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
-        let mut gl = OpenGl;
+        let gl = OpenGl;
         // gl debug context
         setup_opengl_debug_context();
 
-        let vert_str = CString::new(include_str!("vert.glsl")).unwrap();
-        let frag_str = CString::new(include_str!("frag.glsl")).unwrap();
+        let vert_str = CString::new(include_str!("vert.vert")).unwrap();
+        let frag_str = CString::new(include_str!("frag.frag")).unwrap();
         let vert_shader = Shader::new(&vert_str, ShaderType::Vertex).unwrap();
         let frag_shader = Shader::new(&frag_str, ShaderType::Fragment).unwrap();
         let program = Program::new(&[vert_shader, frag_shader]).unwrap();

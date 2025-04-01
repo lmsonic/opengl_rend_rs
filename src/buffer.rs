@@ -1,8 +1,8 @@
-use std::{marker::PhantomData, os::raw::c_void};
+use std::marker::PhantomData;
 
-use gl::types::{GLboolean, GLenum, GLsizeiptr};
+use gl::types::{GLenum, GLsizeiptr};
 
-use crate::{vertex_attributes::VertexAttribute, GLHandle, NULL_HANDLE};
+use crate::{GLHandle, NULL_HANDLE};
 
 #[derive(Clone, Copy)]
 #[repr(u32)]
