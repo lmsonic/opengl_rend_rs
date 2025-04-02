@@ -1,10 +1,12 @@
-use glfw::{fail_on_errors, Action, Context, Key, Modifiers, Window};
+use glfw::{fail_on_errors, Action, Context, Key, Modifiers, PWindow, Window};
 
 pub trait Application {
-    fn new(window: &mut Window) -> Self;
+    fn new(window: PWindow) -> Self;
     fn display(&mut self) {}
     fn keyboard(&mut self, key: Key, action: Action, modifier: Modifiers) {}
     fn reshape(&mut self, width: i32, height: i32) {}
+    fn window(&self) -> &PWindow;
+    fn window_mut(&mut self) -> &mut PWindow;
 }
 
 pub fn run_app<A: Application>() {
@@ -24,16 +26,15 @@ pub fn run_app<A: Application>() {
     window.make_current();
     window.set_key_polling(true);
     window.set_framebuffer_size_polling(true);
-
-    let mut app = A::new(&mut window);
+    let mut app = A::new(window);
 
     // Loop until the user closes the window
-    while !window.should_close() {
+    while !app.window().should_close() {
         // process events
         for (_, event) in glfw::flush_messages(&events) {
             match event {
                 glfw::WindowEvent::Key(Key::Escape, _, Action::Press, _) => {
-                    window.set_should_close(true)
+                    app.window_mut().set_should_close(true)
                 }
                 glfw::WindowEvent::Key(key, _, action, modifier) => {
                     app.keyboard(key, action, modifier)
@@ -48,7 +49,7 @@ pub fn run_app<A: Application>() {
         app.display();
 
         // Swap front and back buffers
-        window.swap_buffers();
+        app.window_mut().swap_buffers();
 
         // Poll for and process events
         glfw.poll_events();

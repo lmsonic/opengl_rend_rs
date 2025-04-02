@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use gl::types::GLenum;
+use gl::types::{GLenum, GLintptr};
 
 use crate::{GLHandle, NULL_HANDLE};
 
@@ -55,6 +55,16 @@ impl<T> Buffer<T> {
                 std::mem::size_of_val(data) as isize,
                 data.as_ptr() as *const _,
                 usage as GLenum,
+            )
+        };
+    }
+    pub fn update_data(&mut self, data: &[T], offset: GLintptr) {
+        unsafe {
+            gl::BufferSubData(
+                self.target as GLenum,
+                offset,
+                std::mem::size_of_val(data) as isize,
+                data.as_ptr() as *const _,
             )
         };
     }

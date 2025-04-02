@@ -1,8 +1,8 @@
 use std::ffi::CString;
 
 use gl::types::GLsizei;
-use glfw::{fail_on_errors, Window};
-use glfw::{Action, Context, Key, Modifiers};
+use glfw::{Action, Key, Modifiers};
+use glfw::{PWindow, Window};
 use opengl_rend::app::{run_app, Application};
 use opengl_rend::buffer::{BufferType, Usage};
 use opengl_rend::program::{Shader, ShaderType};
@@ -12,6 +12,7 @@ use opengl_rend::{
 };
 
 struct App {
+    window: PWindow,
     gl: OpenGl,
     program: Program,
     vertex_array_object: VertexArrayObject,
@@ -29,8 +30,8 @@ const VERTEX_DATA: [f32; 24] = [
 ];
 
 impl Application for App {
-    fn new(window: &mut Window) -> App {
-        let mut gl = OpenGl::new(window);
+    fn new(mut window: PWindow) -> App {
+        let mut gl = OpenGl::new(&mut window);
         // gl debug context
         gl.setup_debug_context();
 
@@ -55,7 +56,8 @@ impl Application for App {
             gl,
             program,
             vertex_array_object,
-            vertex_buffer, // needs to be around if not it gets dropped
+            vertex_buffer, // needs to be kept around if not it gets dropped
+            window,
         }
     }
 
@@ -75,6 +77,14 @@ impl Application for App {
 
     fn reshape(&mut self, width: i32, height: i32) {
         self.gl.viewport(0, 0, width as GLsizei, height as GLsizei);
+    }
+
+    fn window(&self) -> &PWindow {
+        &self.window
+    }
+
+    fn window_mut(&mut self) -> &mut PWindow {
+        &mut self.window
     }
 }
 
