@@ -79,8 +79,11 @@ impl Application for App {
         // gl.polygon_mode(opengl::PolygonMode::Line);
 
         let loop_duration_location = program.get_uniform_location(c"loopDuration").unwrap();
+        let frag_loop_duration_location =
+            program.get_uniform_location(c"fragLoopDuration").unwrap();
         program.set_used();
         program.set_uniform(loop_duration_location, 5.0);
+        program.set_uniform(frag_loop_duration_location, 10.0);
         program.set_unused();
         let elapsed_time_location = program.get_uniform_location(c"time").unwrap();
         Self {
