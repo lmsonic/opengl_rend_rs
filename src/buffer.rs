@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use gl::types::{GLenum, GLsizeiptr};
+use gl::types::GLenum;
 
 use crate::{GLHandle, NULL_HANDLE};
 

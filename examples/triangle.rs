@@ -1,22 +1,15 @@
-mod buffer;
-mod opengl;
-mod program;
-mod vertex_attributes;
+use std::ffi::CString;
 
-use std::ffi::{CStr, CString};
-use std::os::raw::c_void;
-use std::ptr;
-
-use buffer::{Buffer, BufferType, Usage};
-use gl::types::{GLchar, GLenum, GLsizei, GLuint};
+use gl::types::GLsizei;
 use glfw::{fail_on_errors, Window};
 use glfw::{Action, Context, Key, Modifiers};
-use opengl::OpenGl;
-use program::{Program, Shader, ShaderType};
-use vertex_attributes::{DataType, VertexArrayObject, VertexAttribute};
-const NULL_HANDLE: GLHandle = 0;
-
-type GLHandle = gl::types::GLuint;
+use opengl_rend::app::{run_app, Application};
+use opengl_rend::buffer::{BufferType, Usage};
+use opengl_rend::program::{Shader, ShaderType};
+use opengl_rend::vertex_attributes::{DataType, VertexAttribute};
+use opengl_rend::{
+    buffer::Buffer, opengl::OpenGl, program::Program, vertex_attributes::VertexArrayObject,
+};
 
 struct App {
     gl: OpenGl,
@@ -35,7 +28,7 @@ const VERTEX_DATA: [f32; 24] = [
     0.0, 0.0, 1.0, 1.0,
 ];
 
-impl App {
+impl Application for App {
     fn new(window: &mut Window) -> App {
         let mut gl = OpenGl::new(window);
         // gl debug context
@@ -62,7 +55,7 @@ impl App {
             gl,
             program,
             vertex_array_object,
-            vertex_buffer,
+            vertex_buffer, // needs to be around if not it gets dropped
         }
     }
 
@@ -86,49 +79,5 @@ impl App {
 }
 
 fn main() {
-    let mut glfw = glfw::init(fail_on_errors!()).unwrap();
-    glfw.window_hint(glfw::WindowHint::ContextVersion(4, 3));
-    glfw.window_hint(glfw::WindowHint::OpenGlProfile(
-        glfw::OpenGlProfileHint::Core,
-    ));
-    glfw.window_hint(glfw::WindowHint::OpenGlDebugContext(true));
-
-    // Create a windowed mode window and its OpenGL context
-    let (mut window, events) = glfw
-        .create_window(600, 600, "OpenGl", glfw::WindowMode::Windowed)
-        .expect("Failed to create GLFW window.");
-
-    // Make the window's context current
-    window.make_current();
-    window.set_key_polling(true);
-    window.set_framebuffer_size_polling(true);
-
-    let mut app = App::new(&mut window);
-
-    // Loop until the user closes the window
-    while !window.should_close() {
-        // process events
-        for (_, event) in glfw::flush_messages(&events) {
-            match event {
-                glfw::WindowEvent::Key(Key::Escape, _, Action::Press, _) => {
-                    window.set_should_close(true)
-                }
-                glfw::WindowEvent::Key(key, _, action, modifier) => {
-                    app.keyboard(key, action, modifier)
-                }
-
-                glfw::WindowEvent::FramebufferSize(width, height) => app.reshape(width, height),
-                _ => {}
-            }
-        }
-
-        // render
-        app.display();
-
-        // Swap front and back buffers
-        window.swap_buffers();
-
-        // Poll for and process events
-        glfw.poll_events();
-    }
+    run_app::<App>();
 }
