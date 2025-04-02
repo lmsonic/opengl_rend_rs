@@ -66,7 +66,7 @@ impl Program {
 
     pub fn get_uniform_location(&mut self, name: &CStr) -> Option<GLint> {
         let loc = unsafe { gl::GetUniformLocation(self.id, name.as_ptr()) };
-        if loc == 1 {
+        if loc == -1 {
             return None;
         }
         Some(loc)

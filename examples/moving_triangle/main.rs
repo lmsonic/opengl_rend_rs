@@ -18,18 +18,18 @@ struct App {
     program: Program,
     vertex_array_object: VertexArrayObject,
     vertex_buffer: Buffer<f32>,
-    offset_location: GLint,
+    elapsed_time_location: GLint,
 }
 
 #[rustfmt::skip]
-const VERTEX_DATA: [f32; 24] = [
+const VERTEX_DATA: [f32;24] = [
     0.0, 0.5, 0.0, 1.0, 
     0.5, -0.366, 0.0, 1.0,
     -0.5, -0.366, 0.0, 1.0,
     1.0, 0.0, 0.0, 1.0,
     0.0, 1.0, 0.0, 1.0,
     0.0, 0.0, 1.0, 1.0,
-];
+    ];
 
 impl App {
     fn compute_position_offsets(&self, loop_duration: f32) -> (f32, f32) {
@@ -78,14 +78,18 @@ impl Application for App {
         vertex_array_object.set_attribute(1, &vec4, 0, (vec4.size() * 3) as GLsizei);
         // gl.polygon_mode(opengl::PolygonMode::Line);
 
-        let offset_location = program.get_uniform_location(c"offset").unwrap();
+        let loop_duration_location = program.get_uniform_location(c"loopDuration").unwrap();
+        program.set_used();
+        program.set_uniform(loop_duration_location, 5.0);
+        program.set_unused();
+        let elapsed_time_location = program.get_uniform_location(c"time").unwrap();
         Self {
             gl,
             program,
             vertex_array_object,
             vertex_buffer, // needs to be around if not it gets dropped
             window,
-            offset_location,
+            elapsed_time_location,
         }
     }
 
@@ -93,11 +97,9 @@ impl Application for App {
         self.gl.clear_color(0.5, 0.5, 0.5, 0.0);
         self.gl.clear(gl::COLOR_BUFFER_BIT);
 
-        let (x_offset, y_offset) = self.compute_position_offsets(5.0);
-
         self.program.set_used();
-        self.program
-            .set_uniform(self.offset_location, (x_offset, y_offset));
+        let time = self.window.glfw.get_time() as f32;
+        self.program.set_uniform(self.elapsed_time_location, time);
 
         self.vertex_buffer.bind();
         self.vertex_array_object.bind();
