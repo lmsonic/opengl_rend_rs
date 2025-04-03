@@ -3,9 +3,11 @@ use std::{
     ptr,
 };
 
-use gl::types::{GLenum, GLint, GLuint};
+use gl::types::{GLenum, GLint};
 
 use crate::{uniforms::SetUniform, GLHandle};
+
+pub type GLLocation = GLint;
 
 pub struct Program {
     id: GLHandle,
@@ -64,7 +66,7 @@ impl Program {
         unsafe { gl::UseProgram(0) };
     }
 
-    pub fn get_uniform_location(&mut self, name: &CStr) -> Option<GLint> {
+    pub fn get_uniform_location(&mut self, name: &CStr) -> Option<GLLocation> {
         let loc = unsafe { gl::GetUniformLocation(self.id, name.as_ptr()) };
         if loc == -1 {
             return None;

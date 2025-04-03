@@ -128,3 +128,9 @@ impl VertexArrayObject {
         unsafe { gl::EnableVertexAttribArray(location) };
     }
 }
+
+impl Default for VertexArrayObject {
+    fn default() -> Self {
+        Self::new()
+    }
+}

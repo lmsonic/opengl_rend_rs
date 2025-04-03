@@ -1,10 +1,10 @@
-use glfw::{fail_on_errors, Action, Context, Key, Modifiers, PWindow, Window};
+use glfw::{fail_on_errors, Action, Context, Key, Modifiers, PWindow};
 
 pub trait Application {
     fn new(window: PWindow) -> Self;
     fn display(&mut self) {}
-    fn keyboard(&mut self, key: Key, action: Action, modifier: Modifiers) {}
-    fn reshape(&mut self, width: i32, height: i32) {}
+    fn keyboard(&mut self, _key: Key, _action: Action, _modifier: Modifiers) {}
+    fn reshape(&mut self, _width: i32, _height: i32) {}
     fn window(&self) -> &PWindow;
     fn window_mut(&mut self) -> &mut PWindow;
 }

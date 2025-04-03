@@ -1,0 +1,210 @@
+use std::ffi::CString;
+
+use gl::types::GLsizei;
+use glfw::{Action, Key, Modifiers, PWindow};
+use opengl_rend::app::{run_app, Application};
+use opengl_rend::buffer::{BufferType, Usage};
+use opengl_rend::opengl::{Capability, CullMode, FrontFace, PolygonMode};
+use opengl_rend::program::{GLLocation, Shader, ShaderType};
+use opengl_rend::vertex_attributes::{DataType, VertexAttribute};
+use opengl_rend::{
+    buffer::Buffer, opengl::OpenGl, program::Program, vertex_attributes::VertexArrayObject,
+};
+
+struct App {
+    window: PWindow,
+    gl: OpenGl,
+    program: Program,
+    vertex_array_object: VertexArrayObject,
+    vertex_buffer: Buffer<f32>,
+    offset_location: GLLocation,
+}
+
+#[rustfmt::skip]
+const VERTEX_DATA: [f32;288] = [
+    0.25,  0.25, -1.25, 1.0,
+    0.25, -0.25, -1.25, 1.0,
+   -0.25,  0.25, -1.25, 1.0,
+
+    0.25, -0.25, -1.25, 1.0,
+   -0.25, -0.25, -1.25, 1.0,
+   -0.25,  0.25, -1.25, 1.0,
+
+    0.25,  0.25, -2.75, 1.0,
+   -0.25,  0.25, -2.75, 1.0,
+    0.25, -0.25, -2.75, 1.0,
+
+    0.25, -0.25, -2.75, 1.0,
+   -0.25,  0.25, -2.75, 1.0,
+   -0.25, -0.25, -2.75, 1.0,
+
+   -0.25,  0.25, -1.25, 1.0,
+   -0.25, -0.25, -1.25, 1.0,
+   -0.25, -0.25, -2.75, 1.0,
+
+   -0.25,  0.25, -1.25, 1.0,
+   -0.25, -0.25, -2.75, 1.0,
+   -0.25,  0.25, -2.75, 1.0,
+
+    0.25,  0.25, -1.25, 1.0,
+    0.25, -0.25, -2.75, 1.0,
+    0.25, -0.25, -1.25, 1.0,
+
+    0.25,  0.25, -1.25, 1.0,
+    0.25,  0.25, -2.75, 1.0,
+    0.25, -0.25, -2.75, 1.0,
+
+    0.25,  0.25, -2.75, 1.0,
+    0.25,  0.25, -1.25, 1.0,
+   -0.25,  0.25, -1.25, 1.0,
+
+    0.25,  0.25, -2.75, 1.0,
+   -0.25,  0.25, -1.25, 1.0,
+   -0.25,  0.25, -2.75, 1.0,
+
+    0.25, -0.25, -2.75, 1.0,
+   -0.25, -0.25, -1.25, 1.0,
+    0.25, -0.25, -1.25, 1.0,
+
+    0.25, -0.25, -2.75, 1.0,
+   -0.25, -0.25, -2.75, 1.0,
+   -0.25, -0.25, -1.25, 1.0,
+
+
+
+
+   0.0, 0.0, 1.0, 1.0,
+   0.0, 0.0, 1.0, 1.0,
+   0.0, 0.0, 1.0, 1.0,
+
+   0.0, 0.0, 1.0, 1.0,
+   0.0, 0.0, 1.0, 1.0,
+   0.0, 0.0, 1.0, 1.0,
+
+   0.8, 0.8, 0.8, 1.0,
+   0.8, 0.8, 0.8, 1.0,
+   0.8, 0.8, 0.8, 1.0,
+
+   0.8, 0.8, 0.8, 1.0,
+   0.8, 0.8, 0.8, 1.0,
+   0.8, 0.8, 0.8, 1.0,
+
+   0.0, 1.0, 0.0, 1.0,
+   0.0, 1.0, 0.0, 1.0,
+   0.0, 1.0, 0.0, 1.0,
+
+   0.0, 1.0, 0.0, 1.0,
+   0.0, 1.0, 0.0, 1.0,
+   0.0, 1.0, 0.0, 1.0,
+
+   0.5, 0.5, 0.0, 1.0,
+   0.5, 0.5, 0.0, 1.0,
+   0.5, 0.5, 0.0, 1.0,
+
+   0.5, 0.5, 0.0, 1.0,
+   0.5, 0.5, 0.0, 1.0,
+   0.5, 0.5, 0.0, 1.0,
+
+   1.0, 0.0, 0.0, 1.0,
+   1.0, 0.0, 0.0, 1.0,
+   1.0, 0.0, 0.0, 1.0,
+
+   1.0, 0.0, 0.0, 1.0,
+   1.0, 0.0, 0.0, 1.0,
+   1.0, 0.0, 0.0, 1.0,
+
+   0.0, 1.0, 1.0, 1.0,
+   0.0, 1.0, 1.0, 1.0,
+   0.0, 1.0, 1.0, 1.0,
+
+   0.0, 1.0, 1.0, 1.0,
+   0.0, 1.0, 1.0, 1.0,
+   0.0, 1.0, 1.0, 1.0,
+];
+
+impl Application for App {
+    fn new(mut window: PWindow) -> App {
+        let mut gl = OpenGl::new(&mut window);
+
+        // initialize program
+        let vert_str = CString::new(include_str!("vert.vert")).unwrap();
+        let frag_str = CString::new(include_str!("frag.frag")).unwrap();
+        let vert_shader = Shader::new(&vert_str, ShaderType::Vertex).unwrap();
+        let frag_shader = Shader::new(&frag_str, ShaderType::Fragment).unwrap();
+        let mut program = Program::new(&[vert_shader, frag_shader]).unwrap();
+
+        // initialize vertex buffer
+        let mut vertex_buffer = Buffer::new(BufferType::ArrayBuffer);
+        vertex_buffer.bind();
+        vertex_buffer.buffer_data(&VERTEX_DATA, Usage::StreamDraw);
+
+        // initialize vao
+        let mut vertex_array_object = VertexArrayObject::new();
+        let vec4 = VertexAttribute::new(4, DataType::Float, false);
+
+        let begin_color_data = std::mem::size_of_val(&VERTEX_DATA) / 2;
+
+        vertex_array_object.bind();
+        vertex_array_object.set_attribute(0, &vec4, 0, 0);
+        vertex_array_object.set_attribute(1, &vec4, 0, begin_color_data as GLsizei);
+        // gl.polygon_mode(PolygonMode::Line);
+
+        gl.enable(Capability::CullFace);
+        gl.cull_face(CullMode::Back);
+        gl.front_face(FrontFace::CW);
+
+        let offset_location = program.get_uniform_location(c"offset").unwrap();
+
+        let frustum_scale_location = program.get_uniform_location(c"frustumScale").unwrap();
+        let z_near_location = program.get_uniform_location(c"zNear").unwrap();
+        let z_far_location = program.get_uniform_location(c"zFar").unwrap();
+
+        program.set_used();
+        program.set_uniform(frustum_scale_location, 1.0);
+        program.set_uniform(z_near_location, 0.1);
+        program.set_uniform(z_far_location, 5.0);
+        program.set_unused();
+
+        Self {
+            gl,
+            program,
+            vertex_array_object,
+            vertex_buffer, // needs to be around if not it gets dropped
+            window,
+            offset_location,
+        }
+    }
+
+    fn display(&mut self) {
+        self.gl.clear_color(0.5, 0.5, 0.5, 0.0);
+        self.gl.clear(gl::COLOR_BUFFER_BIT);
+
+        self.program.set_used();
+        self.program.set_uniform(self.offset_location, (0.5, 0.5));
+        self.vertex_buffer.bind();
+        self.vertex_array_object.bind();
+
+        self.gl.draw_arrays(gl::TRIANGLES, 0, 36);
+
+        self.vertex_array_object.unbind();
+        self.program.set_unused();
+    }
+
+    fn keyboard(&mut self, _key: Key, _action: Action, _modifier: Modifiers) {}
+
+    fn reshape(&mut self, width: i32, height: i32) {
+        self.gl.viewport(0, 0, width as GLsizei, height as GLsizei);
+    }
+
+    fn window(&self) -> &PWindow {
+        &self.window
+    }
+
+    fn window_mut(&mut self) -> &mut PWindow {
+        &mut self.window
+    }
+}
+
+fn main() {
+    run_app::<App>();
+}

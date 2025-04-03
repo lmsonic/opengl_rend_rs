@@ -1,12 +1,11 @@
 use std::f32::consts::TAU;
 use std::ffi::CString;
 
-use gl::types::{GLint, GLsizei};
+use gl::types::GLsizei;
 use glfw::{Action, Key, Modifiers, PWindow};
-use glfw::{Glfw, Window};
 use opengl_rend::app::{run_app, Application};
 use opengl_rend::buffer::{BufferType, Usage};
-use opengl_rend::program::{Shader, ShaderType};
+use opengl_rend::program::{GLLocation, Shader, ShaderType};
 use opengl_rend::vertex_attributes::{DataType, VertexAttribute};
 use opengl_rend::{
     buffer::Buffer, opengl::OpenGl, program::Program, vertex_attributes::VertexArrayObject,
@@ -18,7 +17,7 @@ struct App {
     program: Program,
     vertex_array_object: VertexArrayObject,
     vertex_buffer: Buffer<f32>,
-    elapsed_time_location: GLint,
+    elapsed_time_location: GLLocation,
 }
 
 #[rustfmt::skip]
@@ -32,7 +31,7 @@ const VERTEX_DATA: [f32;24] = [
     ];
 
 impl App {
-    fn compute_position_offsets(&self, loop_duration: f32) -> (f32, f32) {
+    fn _compute_position_offsets(&self, loop_duration: f32) -> (f32, f32) {
         let scale = TAU / loop_duration;
 
         let elapsed_time = self.window.glfw.get_time() as f32;
@@ -40,7 +39,7 @@ impl App {
         let (x_offset, y_offset) = (loop_time * scale).sin_cos();
         (x_offset * 0.5, y_offset * 0.5)
     }
-    fn adjust_vertex_data(&mut self, x_offset: f32, y_offset: f32) {
+    fn _adjust_vertex_data(&mut self, x_offset: f32, y_offset: f32) {
         let mut vertices = VERTEX_DATA;
         for i in (0..vertices.len()).step_by(4) {
             vertices[i] += x_offset;
@@ -56,9 +55,7 @@ impl App {
 
 impl Application for App {
     fn new(mut window: PWindow) -> App {
-        let mut gl = OpenGl::new(&mut window);
-        // gl debug context
-        gl.setup_debug_context();
+        let gl = OpenGl::new(&mut window);
 
         let vert_str = CString::new(include_str!("vert.vert")).unwrap();
         let frag_str = CString::new(include_str!("frag.frag")).unwrap();
@@ -71,6 +68,7 @@ impl Application for App {
         vertex_buffer.buffer_data(&VERTEX_DATA, Usage::StreamDraw);
 
         let mut vertex_array_object = VertexArrayObject::new();
+
         let vec4 = VertexAttribute::new(4, DataType::Float, false);
 
         vertex_array_object.bind();
@@ -113,7 +111,7 @@ impl Application for App {
         self.program.set_unused();
     }
 
-    fn keyboard(&mut self, key: Key, action: Action, modifier: Modifiers) {}
+    fn keyboard(&mut self, _key: Key, _action: Action, _modifier: Modifiers) {}
 
     fn reshape(&mut self, width: i32, height: i32) {
         self.gl.viewport(0, 0, width as GLsizei, height as GLsizei);

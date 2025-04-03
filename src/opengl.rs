@@ -53,6 +53,21 @@ pub enum Capability {
     ProgramPointSize = gl::PROGRAM_POINT_SIZE,
 }
 
+#[derive(Clone, Copy)]
+#[repr(u32)]
+pub enum CullMode {
+    Front = gl::FRONT,
+    Back = gl::BACK,
+    FrontAndBack = gl::FRONT_AND_BACK,
+}
+
+#[derive(Clone, Copy)]
+#[repr(u32)]
+pub enum FrontFace {
+    CW = gl::CW,
+    CCW = gl::CCW,
+}
+
 extern "system" fn gl_debug_output(
     source: GLenum,
     type_: GLenum,
@@ -60,7 +75,7 @@ extern "system" fn gl_debug_output(
     severity: GLenum,
     _length: GLsizei,
     message: *const GLchar,
-    user_param: *mut c_void,
+    _user_param: *mut c_void,
 ) {
     if id == 131169 || id == 131185 || id == 131218 || id == 131204 {
         return;
@@ -103,7 +118,9 @@ extern "system" fn gl_debug_output(
 impl OpenGl {
     pub fn new(window: &mut Window) -> Self {
         gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
-        OpenGl
+        let mut gl = OpenGl;
+        gl.setup_debug_context();
+        gl
     }
 
     pub fn enable(&mut self, cap: Capability) {
@@ -113,11 +130,7 @@ impl OpenGl {
         unsafe { gl::Disable(cap as GLenum) };
     }
     pub fn is_enabled(&mut self, cap: Capability) -> bool {
-        if unsafe { gl::IsEnabled(cap as GLenum) } != gl::FALSE {
-            return true;
-        } else {
-            false
-        }
+        (unsafe { gl::IsEnabled(cap as GLenum) } != gl::FALSE)
     }
 
     pub fn setup_debug_context(&mut self) {
@@ -158,5 +171,13 @@ impl OpenGl {
     }
     pub fn polygon_mode(&mut self, mode: PolygonMode) {
         unsafe { gl::PolygonMode(gl::FRONT_AND_BACK, mode as GLenum) };
+    }
+
+    pub fn cull_face(&mut self, mode: CullMode) {
+        unsafe { gl::CullFace(mode as GLenum) };
+    }
+
+    pub fn front_face(&mut self, front_face: FrontFace) {
+        unsafe { gl::FrontFace(front_face as GLenum) };
     }
 }
