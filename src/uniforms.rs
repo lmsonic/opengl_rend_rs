@@ -99,3 +99,17 @@ impl SetUniform for (u32, u32, u32, u32) {
         unsafe { gl::Uniform4ui(location, self.0, self.1, self.2, self.3) }
     }
 }
+
+impl private::Sealed for [f32; 16] {}
+impl SetUniform for [f32; 16] {
+    fn set_uniform(&self, location: GLint) {
+        unsafe { gl::UniformMatrix4fv(location, 1, gl::FALSE, self.as_ptr()) }
+    }
+}
+
+impl private::Sealed for glam::Mat4 {}
+impl SetUniform for glam::Mat4 {
+    fn set_uniform(&self, location: GLint) {
+        unsafe { gl::UniformMatrix4fv(location, 1, gl::FALSE, self.to_cols_array().as_ptr()) }
+    }
+}

@@ -1,6 +1,7 @@
 use std::ffi::CString;
 
 use gl::types::GLsizei;
+use glam::Mat4;
 use glfw::{Action, Key, Modifiers, PWindow};
 use opengl_rend::app::{run_app, Application};
 use opengl_rend::buffer::{BufferType, Usage};
@@ -155,14 +156,24 @@ impl Application for App {
 
         let offset_location = program.get_uniform_location(c"offset").unwrap();
 
-        let frustum_scale_location = program.get_uniform_location(c"frustumScale").unwrap();
-        let z_near_location = program.get_uniform_location(c"zNear").unwrap();
-        let z_far_location = program.get_uniform_location(c"zFar").unwrap();
+        let frustum_scale = 1.0;
+        let z_near = 1.0;
+        let z_far = 3.0;
+
+        let mut matrix: [f32; 16] = [0.0; 16];
+        matrix[0] = frustum_scale;
+        matrix[5] = frustum_scale;
+        matrix[10] = (z_far + z_near) / (z_near - z_far);
+        matrix[14] = (2.0 * z_far * z_near) / (z_near - z_far);
+        matrix[11] = -1.0;
+
+        let matrix = Mat4::perspective_rh_gl(f32::to_radians(90.0), 1.0, z_near, z_far);
+
+        let perspective_matrix_location =
+            program.get_uniform_location(c"perspectiveMatrix").unwrap();
 
         program.set_used();
-        program.set_uniform(frustum_scale_location, 1.0);
-        program.set_uniform(z_near_location, 0.1);
-        program.set_uniform(z_far_location, 5.0);
+        program.set_uniform(perspective_matrix_location, matrix);
         program.set_unused();
 
         Self {
