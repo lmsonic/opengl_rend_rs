@@ -14,6 +14,45 @@ pub enum PolygonMode {
     Line = gl::LINE,
     Fill = gl::FILL,
 }
+#[derive(Clone, Copy)]
+#[repr(u32)]
+pub enum Capability {
+    Blend = gl::BLEND,
+    ClipDistance0 = gl::CLIP_DISTANCE0,
+    ClipDistance1 = gl::CLIP_DISTANCE1,
+    ClipDistance2 = gl::CLIP_DISTANCE2,
+    ClipDistance3 = gl::CLIP_DISTANCE3,
+    ClipDistance4 = gl::CLIP_DISTANCE4,
+    ClipDistance5 = gl::CLIP_DISTANCE5,
+    ClipDistance6 = gl::CLIP_DISTANCE6,
+    ClipDistance7 = gl::CLIP_DISTANCE7,
+    ColorLogicOp = gl::COLOR_LOGIC_OP,
+    CullFace = gl::CULL_FACE,
+    DebugOutput = gl::DEBUG_OUTPUT,
+    DebugOutputSync = gl::DEBUG_OUTPUT_SYNCHRONOUS,
+    DepthClamp = gl::DEPTH_CLAMP,
+    DepthTest = gl::DEPTH_TEST,
+    Dither = gl::DITHER,
+    FramebufferSrgb = gl::FRAMEBUFFER_SRGB,
+    LineSmooth = gl::LINE_SMOOTH,
+    MULTISAMPLE = gl::MULTISAMPLE,
+    PolygonOffsetFill = gl::POLYGON_OFFSET_FILL,
+    PolygonOffsetLine = gl::POLYGON_OFFSET_LINE,
+    PolygonSmooth = gl::POLYGON_SMOOTH,
+    PrimitiveRestart = gl::PRIMITIVE_RESTART,
+    PrimitiveRestartFixedIndex = gl::PRIMITIVE_RESTART_FIXED_INDEX,
+    RasterizerDiscard = gl::RASTERIZER_DISCARD,
+    SampleAlphaToCoverage = gl::SAMPLE_ALPHA_TO_COVERAGE,
+    SampleAlphaToOne = gl::SAMPLE_ALPHA_TO_ONE,
+    SampleCoverage = gl::SAMPLE_COVERAGE,
+    SampleShading = gl::SAMPLE_SHADING,
+    SampleMask = gl::SAMPLE_MASK,
+    ScissorTest = gl::SCISSOR_TEST,
+    StencilTest = gl::STENCIL_TEST,
+    TextureCubeMapSeamless = gl::TEXTURE_CUBE_MAP_SEAMLESS,
+    ProgramPointSize = gl::PROGRAM_POINT_SIZE,
+}
+
 extern "system" fn gl_debug_output(
     source: GLenum,
     type_: GLenum,
@@ -62,13 +101,32 @@ extern "system" fn gl_debug_output(
 }
 
 impl OpenGl {
+    pub fn new(window: &mut Window) -> Self {
+        gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
+        OpenGl
+    }
+
+    pub fn enable(&mut self, cap: Capability) {
+        unsafe { gl::Enable(cap as GLenum) };
+    }
+    pub fn disable(&mut self, cap: Capability) {
+        unsafe { gl::Disable(cap as GLenum) };
+    }
+    pub fn is_enabled(&mut self, cap: Capability) -> bool {
+        if unsafe { gl::IsEnabled(cap as GLenum) } != gl::FALSE {
+            return true;
+        } else {
+            false
+        }
+    }
+
     pub fn setup_debug_context(&mut self) {
         let mut flags = 0;
         unsafe { gl::GetIntegerv(gl::CONTEXT_FLAGS, &mut flags) };
         if (flags as GLenum & gl::CONTEXT_FLAG_DEBUG_BIT) != 0 {
             // initialize debug output
-            unsafe { gl::Enable(gl::DEBUG_OUTPUT) };
-            unsafe { gl::Enable(gl::DEBUG_OUTPUT_SYNCHRONOUS) };
+            self.enable(Capability::DebugOutput);
+            self.enable(Capability::DebugOutputSync);
             unsafe { gl::DebugMessageCallback(Some(gl_debug_output), ptr::null()) }
             unsafe {
                 gl::DebugMessageControl(
@@ -100,10 +158,5 @@ impl OpenGl {
     }
     pub fn polygon_mode(&mut self, mode: PolygonMode) {
         unsafe { gl::PolygonMode(gl::FRONT_AND_BACK, mode as GLenum) };
-    }
-
-    pub fn new(window: &mut Window) -> Self {
-        gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
-        OpenGl
     }
 }
