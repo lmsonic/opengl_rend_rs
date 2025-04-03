@@ -19,6 +19,9 @@ struct App {
     vertex_array_object: VertexArrayObject,
     vertex_buffer: Buffer<f32>,
     offset_location: GLLocation,
+    perspective_matrix_location: GLLocation,
+    perspective_matrix: [f32; 16],
+    // perspective_matrix: Mat4,
 }
 
 #[rustfmt::skip]
@@ -167,7 +170,8 @@ impl Application for App {
         matrix[14] = (2.0 * z_far * z_near) / (z_near - z_far);
         matrix[11] = -1.0;
 
-        let matrix = Mat4::perspective_rh_gl(f32::to_radians(90.0), 1.0, z_near, z_far);
+        // let fov = f32::to_radians(90.0);
+        // let matrix = Mat4::perspective_rh_gl(fov, 1.0, z_near, z_far);
 
         let perspective_matrix_location =
             program.get_uniform_location(c"perspectiveMatrix").unwrap();
@@ -183,6 +187,8 @@ impl Application for App {
             vertex_buffer, // needs to be around if not it gets dropped
             window,
             offset_location,
+            perspective_matrix_location,
+            perspective_matrix: matrix,
         }
     }
 
@@ -204,6 +210,22 @@ impl Application for App {
     fn keyboard(&mut self, _key: Key, _action: Action, _modifier: Modifiers) {}
 
     fn reshape(&mut self, width: i32, height: i32) {
+        let frustum_scale = 1.0;
+
+        self.perspective_matrix[0] = frustum_scale / (width as f32 / height as f32);
+        self.perspective_matrix[5] = frustum_scale;
+
+        // let z_near = 1.0;
+        // let z_far = 3.0;
+        // let fov = f32::to_radians(90.0);
+        // self.perspective_matrix =
+        //     Mat4::perspective_rh_gl(fov, width as f32 / height as f32, z_near, z_far);
+
+        self.program.set_used();
+        self.program
+            .set_uniform(self.perspective_matrix_location, self.perspective_matrix);
+        self.program.set_unused();
+
         self.gl.viewport(0, 0, width as GLsizei, height as GLsizei);
     }
 
