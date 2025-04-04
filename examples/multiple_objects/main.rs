@@ -24,6 +24,7 @@ struct App {
     offset_location: GLLocation,
     perspective_matrix_location: GLLocation,
     perspective_matrix: [f32; 16],
+    depth_clamping: bool,
 }
 
 const RIGHT_EXTENT: f32 = 0.8;
@@ -232,6 +233,7 @@ impl Application for App {
             offset_location,
             perspective_matrix_location,
             perspective_matrix: matrix,
+            depth_clamping: false,
         }
     }
 
@@ -244,7 +246,7 @@ impl Application for App {
 
         self.vertex_buffer_object.bind();
         self.program
-            .set_uniform(self.offset_location, (0.0, 0.0, 0.0));
+            .set_uniform(self.offset_location, (0.0, 0.0, 0.5));
         self.gl.draw_elements(
             DrawMode::Triangles,
             INDEX_DATA.len() as GLsizei,
@@ -253,7 +255,7 @@ impl Application for App {
         );
 
         self.program
-            .set_uniform(self.offset_location, (0.0, 0.0, -0.3));
+            .set_uniform(self.offset_location, (0.0, 0.0, 0.3));
         self.gl.draw_elements_base_vertex(
             DrawMode::Triangles,
             INDEX_DATA.len() as GLsizei,
@@ -266,7 +268,16 @@ impl Application for App {
         self.program.set_unused();
     }
 
-    fn keyboard(&mut self, _key: Key, _action: Action, _modifier: Modifiers) {}
+    fn keyboard(&mut self, key: Key, action: Action, _modifier: Modifiers) {
+        if let (Key::Space, Action::Press) = (key, action) {
+            if self.depth_clamping {
+                self.gl.disable(Capability::DepthClamp);
+            } else {
+                self.gl.enable(Capability::DepthClamp);
+            }
+            self.depth_clamping = !self.depth_clamping;
+        }
+    }
 
     fn reshape(&mut self, width: i32, height: i32) {
         let frustum_scale = 1.0;
