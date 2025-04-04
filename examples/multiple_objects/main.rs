@@ -15,8 +15,7 @@ struct App {
     window: PWindow,
     gl: OpenGl,
     program: Program,
-    vao1: VertexArrayObject,
-    vao2: VertexArrayObject,
+    vertex_buffer_object: VertexArrayObject,
     vertex_buffer: Buffer<f32>,
     index_buffer: Buffer<u32>,
     offset_location: GLLocation,
@@ -37,6 +36,8 @@ const BLUE_COLOR: [f32; 4] = [0.0, 0.5, 0.0, 1.0];
 const RED_COLOR: [f32; 4] = [1.0, 0.0, 0.0, 1.0];
 const GREY_COLOR: [f32; 4] = [0.8, 0.8, 0.8, 1.0];
 const BROWN_COLOR: [f32; 4] = [0.5, 0.5, 0.0, 1.0];
+
+const NUMBER_OF_VERTICES: usize = 36;
 
 #[rustfmt::skip]
 const VERTEX_DATA: [f32;252] = [
@@ -173,27 +174,17 @@ impl Application for App {
         index_buffer.bind();
         index_buffer.buffer_data(&INDEX_DATA, Usage::StaticDraw);
         // initialize vaos
-        let mut vao1 = VertexArrayObject::new();
-        vao1.bind();
+        let mut vertex_buffer_object = VertexArrayObject::new();
+        vertex_buffer_object.bind();
         let vec3 = VertexAttribute::new(3, DataType::Float, false);
         let vec4 = VertexAttribute::new(4, DataType::Float, false);
 
-        const NUMBER_OF_VERTICES: usize = 36;
-        let mut color_data_offset = std::mem::size_of::<f32>() * 3 * NUMBER_OF_VERTICES;
+        let color_data_offset = std::mem::size_of::<f32>() * 3 * NUMBER_OF_VERTICES;
 
         vertex_buffer.bind();
-        vao1.set_attribute(0, &vec3, 0, 0);
-        vao1.set_attribute(1, &vec4, 0, color_data_offset as GLsizei);
+        vertex_buffer_object.set_attribute(0, &vec3, 0, 0);
+        vertex_buffer_object.set_attribute(1, &vec4, 0, color_data_offset as GLsizei);
         index_buffer.bind();
-
-        let mut vao2 = VertexArrayObject::new();
-        let position_data_offset = std::mem::size_of::<f32>() * 3 * (NUMBER_OF_VERTICES / 2);
-        color_data_offset += std::mem::size_of::<f32>() * 4 * (NUMBER_OF_VERTICES / 2);
-        vao2.bind();
-        vao2.set_attribute(0, &vec3, 0, position_data_offset as GLsizei);
-        vao2.set_attribute(1, &vec4, 0, color_data_offset as GLsizei);
-        index_buffer.bind();
-        vao2.unbind();
 
         // enable backface culling
         gl.enable(Capability::CullFace);
@@ -225,8 +216,7 @@ impl Application for App {
         Self {
             gl,
             program,
-            vao1,
-            vao2,
+            vertex_buffer_object,
             vertex_buffer,
             index_buffer,
             window,
@@ -242,7 +232,7 @@ impl Application for App {
 
         self.program.set_used();
 
-        self.vao1.bind();
+        self.vertex_buffer_object.bind();
         self.program
             .set_uniform(self.offset_location, (0.0, 0.0, 0.0));
         self.gl.draw_elements(
@@ -252,17 +242,17 @@ impl Application for App {
             0,
         );
 
-        self.vao2.bind();
         self.program
             .set_uniform(self.offset_location, (0.0, 0.0, -1.0));
-        self.gl.draw_elements(
+        self.gl.draw_elements_base_vertex(
             DrawMode::Triangles,
             INDEX_DATA.len() as GLsizei,
             IndexSize::UnsignedInt,
             0,
+            (NUMBER_OF_VERTICES / 2) as i32,
         );
 
-        self.vao1.unbind();
+        self.vertex_buffer_object.unbind();
         self.program.set_unused();
     }
 

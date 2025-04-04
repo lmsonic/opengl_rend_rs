@@ -205,6 +205,25 @@ impl OpenGl {
         };
     }
 
+    pub fn draw_elements_base_vertex(
+        &mut self,
+        mode: DrawMode,
+        count: GLint,
+        index_size: IndexSize,
+        offset: usize,
+        base_vertex: GLsizei,
+    ) {
+        unsafe {
+            gl::DrawElementsBaseVertex(
+                mode as GLenum,
+                count,
+                index_size as GLenum,
+                offset as *const _,
+                base_vertex,
+            )
+        };
+    }
+
     pub fn viewport(&mut self, x: GLsizei, y: GLsizei, width: GLsizei, height: GLsizei) {
         unsafe {
             gl::Viewport(x, y, width, height);
