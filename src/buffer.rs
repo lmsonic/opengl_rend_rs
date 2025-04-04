@@ -9,6 +9,19 @@ use crate::{GLHandle, NULL_HANDLE};
 pub enum BufferType {
     ArrayBuffer = gl::ARRAY_BUFFER,
     IndexBuffer = gl::ELEMENT_ARRAY_BUFFER,
+
+    AtomicCounterBuffer = gl::ATOMIC_COUNTER_BUFFER,
+    CopyReadBuffer = gl::COPY_READ_BUFFER,
+    CopyWriteBuffer = gl::COPY_WRITE_BUFFER,
+    DispatchIndirectBuffer = gl::DISPATCH_INDIRECT_BUFFER,
+    DrawIndirectBuffer = gl::DRAW_INDIRECT_BUFFER,
+    PixelPackBuffer = gl::PIXEL_PACK_BUFFER,
+    PixelUnpackBuffer = gl::PIXEL_UNPACK_BUFFER,
+    QueryBuffer = gl::QUERY_BUFFER,
+    ShaderStorageBuffer = gl::SHADER_STORAGE_BUFFER,
+    TextureBuffer = gl::TEXTURE_BUFFER,
+    TransformFeedbackBuffer = gl::TRANSFORM_FEEDBACK_BUFFER,
+    UniformBuffer = gl::UNIFORM_BUFFER,
 }
 
 #[derive(Clone, Copy)]

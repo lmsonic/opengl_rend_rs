@@ -1,11 +1,10 @@
 use std::ffi::CString;
 
 use gl::types::GLsizei;
-use glam::Mat4;
 use glfw::{Action, Key, Modifiers, PWindow};
 use opengl_rend::app::{run_app, Application};
 use opengl_rend::buffer::{BufferType, Usage};
-use opengl_rend::opengl::{Capability, CullMode, FrontFace, PolygonMode};
+use opengl_rend::opengl::{Capability, CullMode, DrawMode, FrontFace};
 use opengl_rend::program::{GLLocation, Shader, ShaderType};
 use opengl_rend::vertex_attributes::{DataType, VertexAttribute};
 use opengl_rend::{
@@ -201,7 +200,7 @@ impl Application for App {
         self.vertex_buffer.bind();
         self.vertex_array_object.bind();
 
-        self.gl.draw_arrays(gl::TRIANGLES, 0, 36);
+        self.gl.draw_arrays(DrawMode::Triangles, 0, 36);
 
         self.vertex_array_object.unbind();
         self.program.set_unused();

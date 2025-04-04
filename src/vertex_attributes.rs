@@ -79,6 +79,7 @@ impl VertexArrayObject {
     pub fn unbind(&mut self) {
         unsafe { gl::BindVertexArray(NULL_HANDLE) };
     }
+
     pub fn set_attribute(
         &mut self,
         location: GLuint,
@@ -96,10 +97,10 @@ impl VertexArrayObject {
             gl::FALSE
         };
 
-        // // Compute the attribute pointer
-        // let mut pointer = std::ptr::null_mut::<u8>(); // Actual base pointer is in VBO
-        // pointer = pointer.wrapping_add(offset as usize);
-        let pointer = offset;
+        // Compute the attribute pointer
+        let mut pointer = std::ptr::null_mut::<u8>(); // Actual base pointer is in VBO
+        pointer = pointer.wrapping_add(offset as usize);
+        // let pointer = offset;
 
         if attribute.is_floating_point() || attribute.normalized {
             unsafe {
@@ -109,7 +110,7 @@ impl VertexArrayObject {
                     data_type,
                     normalized,
                     stride,
-                    pointer as *const c_void,
+                    pointer as *const _,
                 );
             };
         } else {
@@ -119,7 +120,7 @@ impl VertexArrayObject {
                     components,
                     data_type,
                     stride,
-                    pointer as *const c_void,
+                    pointer as *const _,
                 )
             };
         }

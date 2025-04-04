@@ -68,6 +68,31 @@ pub enum FrontFace {
     CCW = gl::CCW,
 }
 
+#[derive(Clone, Copy)]
+#[repr(u32)]
+pub enum DrawMode {
+    Points = gl::POINTS,
+    LineStrip = gl::LINE_STRIP,
+    LineLoop = gl::LINE_LOOP,
+    LINES = gl::LINES,
+    LineStripAdjacency = gl::LINE_STRIP_ADJACENCY,
+    LinesAdjacency = gl::LINES_ADJACENCY,
+    TriangleStrip = gl::TRIANGLE_STRIP,
+    TriangleFan = gl::TRIANGLE_FAN,
+    Triangles = gl::TRIANGLES,
+    TriangleStripAdjacency = gl::TRIANGLE_STRIP_ADJACENCY,
+    TrianglesAdjacency = gl::TRIANGLES_ADJACENCY,
+    Patches = gl::PATCHES,
+}
+
+#[derive(Clone, Copy)]
+#[repr(u32)]
+pub enum IndexSize {
+    UnsignedByte = gl::UNSIGNED_BYTE,
+    UnsignedShort = gl::UNSIGNED_SHORT,
+    UnsignedInt = gl::UNSIGNED_INT,
+}
+
 extern "system" fn gl_debug_output(
     source: GLenum,
     type_: GLenum,
@@ -160,8 +185,24 @@ impl OpenGl {
     pub fn clear(&mut self, mask: GLbitfield) {
         unsafe { gl::Clear(mask) };
     }
-    pub fn draw_arrays(&mut self, mode: GLenum, first: GLint, count: GLsizei) {
-        unsafe { gl::DrawArrays(mode, first, count) };
+    pub fn draw_arrays(&mut self, mode: DrawMode, first: GLint, count: GLsizei) {
+        unsafe { gl::DrawArrays(mode as GLenum, first, count) };
+    }
+    pub fn draw_elements(
+        &mut self,
+        mode: DrawMode,
+        count: GLint,
+        index_size: IndexSize,
+        offset: usize,
+    ) {
+        unsafe {
+            gl::DrawElements(
+                mode as GLenum,
+                count,
+                index_size as GLenum,
+                offset as *const _,
+            )
+        };
     }
 
     pub fn viewport(&mut self, x: GLsizei, y: GLsizei, width: GLsizei, height: GLsizei) {
