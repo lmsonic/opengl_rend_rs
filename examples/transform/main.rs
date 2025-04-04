@@ -3,7 +3,7 @@ use std::f32::consts::TAU;
 use std::ffi::CString;
 
 use gl::types::GLsizei;
-use glam::{FloatExt, Vec3};
+use glam::{FloatExt, Mat3, Mat4, Vec3};
 use glfw::{Action, Key, Modifiers, PWindow};
 use opengl_rend::app::{run_app, Application};
 use opengl_rend::buffer::{BufferType, Usage};
@@ -81,14 +81,14 @@ enum OffsetFunc {
 }
 
 impl OffsetFunc {
-    fn calculate(self, elapsed_time: f32) -> glam::Vec3 {
+    fn calculate(self, elapsed_time: f32) -> Vec3 {
         match self {
-            OffsetFunc::Stationary => glam::Vec3::new(0.0, 0.0, -20.0),
+            OffsetFunc::Stationary => Vec3::new(0.0, 0.0, -20.0),
             OffsetFunc::Oval => {
                 const LOOP_DURATION: f32 = 3.0;
                 const SCALE: f32 = TAU / LOOP_DURATION;
                 let current_time = elapsed_time % LOOP_DURATION;
-                glam::Vec3::new(
+                Vec3::new(
                     f32::cos(current_time * SCALE) * 4.0,
                     f32::sin(current_time * SCALE) * 6.0,
                     -20.0,
@@ -98,7 +98,7 @@ impl OffsetFunc {
                 const LOOP_DURATION: f32 = 12.0;
                 const SCALE: f32 = TAU / LOOP_DURATION;
                 let current_time = elapsed_time % LOOP_DURATION;
-                glam::Vec3::new(
+                Vec3::new(
                     f32::cos(current_time * SCALE) * 5.0,
                     -3.5,
                     f32::sin(current_time * SCALE) * 5.0 - 20.0,
@@ -106,8 +106,8 @@ impl OffsetFunc {
             }
         }
     }
-    fn matrix(self, elapsed: f32) -> glam::Mat4 {
-        glam::Mat4::from_translation(self.calculate(elapsed))
+    fn matrix(self, elapsed: f32) -> Mat4 {
+        Mat4::from_translation(self.calculate(elapsed))
     }
 }
 
@@ -129,22 +129,22 @@ fn calculate_lerp(elapsed_time: f32, loop_duration: f32) -> f32 {
 }
 
 impl ScaleFunc {
-    fn calculate(self, elapsed_time: f32) -> glam::Vec3 {
+    fn calculate(self, elapsed_time: f32) -> Vec3 {
         match self {
-            ScaleFunc::Identity => glam::Vec3::ONE,
-            ScaleFunc::StaticUniform => glam::Vec3::ONE * 4.0,
-            ScaleFunc::StaticNonUniform => glam::Vec3::new(0.5, 1.0, 10.0),
+            ScaleFunc::Identity => Vec3::ONE,
+            ScaleFunc::StaticUniform => Vec3::ONE * 4.0,
+            ScaleFunc::StaticNonUniform => Vec3::new(0.5, 1.0, 10.0),
             ScaleFunc::DynamicUniform => {
                 const LOOP_DURATION: f32 = 3.0;
                 let value = calculate_lerp(elapsed_time, LOOP_DURATION);
-                glam::Vec3::ONE * f32::lerp(1.0, 4.0, value)
+                Vec3::ONE * f32::lerp(1.0, 4.0, value)
             }
             ScaleFunc::DynamicNonUniform => {
                 const LOOP_DURATION_X: f32 = 3.0;
                 const LOOP_DURATION_Z: f32 = 3.0;
                 let value_x = calculate_lerp(elapsed_time, LOOP_DURATION_X);
                 let value_z = calculate_lerp(elapsed_time, LOOP_DURATION_Z);
-                glam::Vec3::new(
+                Vec3::new(
                     f32::lerp(1.0, 0.5, value_x),
                     1.0,
                     f32::lerp(1.0, 10.0, value_z),
@@ -152,14 +152,98 @@ impl ScaleFunc {
             }
         }
     }
-    fn matrix(self, elapsed: f32, offset: glam::Vec3) -> glam::Mat4 {
+    fn matrix(self, elapsed: f32, offset: Vec3) -> Mat4 {
         let scale = self.calculate(elapsed);
-        glam::Mat4::from_cols(
+        Mat4::from_cols(
             glam::Vec4::X * scale.x,
             glam::Vec4::Y * scale.y,
             glam::Vec4::Z * scale.z,
             offset.extend(1.0),
         )
+    }
+}
+
+fn calculate_angle(elapsed_time: f32, loop_duration: f32) -> f32 {
+    let scale = TAU / loop_duration;
+    let current_time = elapsed_time % loop_duration;
+    current_time * scale
+}
+
+#[derive(Clone, Copy)]
+enum RotationFunc {
+    Identity,
+    RotateX,
+    RotateY,
+    RotateZ,
+    RotateAxis,
+}
+
+impl RotationFunc {
+    fn calculate(self, elapsed_time: f32) -> Mat3 {
+        match self {
+            RotationFunc::Identity => Mat3::IDENTITY,
+            RotationFunc::RotateX => {
+                let angle = calculate_angle(elapsed_time, 3.0);
+                let (sin, cos) = angle.sin_cos();
+                let mut m = Mat3::IDENTITY;
+                m.col_mut(1).y = cos;
+                m.col_mut(1).z = sin;
+
+                m.col_mut(2).y = -sin;
+                m.col_mut(2).z = cos;
+                m
+            }
+            RotationFunc::RotateY => {
+                let angle = calculate_angle(elapsed_time, 2.0);
+                let (sin, cos) = angle.sin_cos();
+                let mut m = Mat3::IDENTITY;
+                m.col_mut(0).x = cos;
+                m.col_mut(0).z = -sin;
+
+                m.col_mut(2).x = sin;
+                m.col_mut(2).z = cos;
+                m
+            }
+            RotationFunc::RotateZ => {
+                let angle = calculate_angle(elapsed_time, 2.0);
+                let (sin, cos) = angle.sin_cos();
+                let mut m = Mat3::IDENTITY;
+                m.col_mut(0).x = cos;
+                m.col_mut(0).y = sin;
+
+                m.col_mut(1).x = -sin;
+                m.col_mut(1).y = cos;
+                m
+            }
+            RotationFunc::RotateAxis => {
+                let angle = calculate_angle(elapsed_time, 2.0);
+                let (sin, cos) = angle.sin_cos();
+                let inv_cos = 1.0 - cos;
+
+                let axis = Vec3::ONE.normalize();
+                let x = axis.x;
+                let y = axis.y;
+                let z = axis.z;
+
+                let mut m = Mat3::IDENTITY;
+                m.col_mut(0).x = (x * x) + ((1.0 - x * x) * cos);
+                m.col_mut(1).x = x * y * (inv_cos) - (z * sin);
+                m.col_mut(2).x = x * z * (inv_cos) + (y * sin);
+
+                m.col_mut(0).y = x * y * (inv_cos) + (z * sin);
+                m.col_mut(1).y = (y * y) + ((1.0 - y * y) * cos);
+                m.col_mut(2).y = y * z * (inv_cos) - (x * sin);
+
+                m.col_mut(0).z = x * z * (inv_cos) - (y * sin);
+                m.col_mut(1).z = y * z * (inv_cos) + (x * sin);
+                m.col_mut(2).z = (z * z) + ((1.0 - z * z) * cos);
+                m
+            }
+        }
+    }
+    fn matrix(self, elapsed: f32, offset: Vec3) -> Mat4 {
+        let rotation = self.calculate(elapsed);
+        Mat4::from_mat3_translation(rotation, offset)
     }
 }
 
@@ -256,11 +340,11 @@ impl Application for App {
         self.vertex_array_object.bind();
         let elapsed = self.window.glfw.get_time() as f32;
         let matrices = [
-            ScaleFunc::Identity.matrix(elapsed, Vec3::new(0.0, 0.0, -45.0)),
-            ScaleFunc::StaticUniform.matrix(elapsed, Vec3::new(-10.0, -10.0, -45.0)),
-            ScaleFunc::StaticNonUniform.matrix(elapsed, Vec3::new(-10.0, 10.0, -45.0)),
-            ScaleFunc::DynamicUniform.matrix(elapsed, Vec3::new(10.0, 10.0, -45.0)),
-            ScaleFunc::DynamicNonUniform.matrix(elapsed, Vec3::new(10.0, -10.0, -45.0)),
+            RotationFunc::Identity.matrix(elapsed, Vec3::new(0.0, 0.0, -45.0)),
+            RotationFunc::RotateX.matrix(elapsed, Vec3::new(-10.0, -10.0, -45.0)),
+            RotationFunc::RotateY.matrix(elapsed, Vec3::new(-10.0, 10.0, -45.0)),
+            RotationFunc::RotateZ.matrix(elapsed, Vec3::new(10.0, 10.0, -45.0)),
+            RotationFunc::RotateAxis.matrix(elapsed, Vec3::new(10.0, -10.0, -45.0)),
         ];
         for m in matrices {
             self.program
