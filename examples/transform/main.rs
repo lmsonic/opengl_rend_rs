@@ -3,6 +3,7 @@ use std::f32::consts::TAU;
 use std::ffi::CString;
 
 use gl::types::GLsizei;
+use glam::{FloatExt, Vec3};
 use glfw::{Action, Key, Modifiers, PWindow};
 use opengl_rend::app::{run_app, Application};
 use opengl_rend::buffer::{BufferType, Usage};
@@ -80,7 +81,7 @@ enum OffsetFunc {
 }
 
 impl OffsetFunc {
-    fn calc_offset(self, elapsed_time: f32) -> glam::Vec3 {
+    fn calculate(self, elapsed_time: f32) -> glam::Vec3 {
         match self {
             OffsetFunc::Stationary => glam::Vec3::new(0.0, 0.0, -20.0),
             OffsetFunc::Oval => {
@@ -105,10 +106,63 @@ impl OffsetFunc {
             }
         }
     }
-    fn offset_matrix(self, elapsed: f32) -> glam::Mat4 {
-        glam::Mat4::from_translation(self.calc_offset(elapsed))
+    fn matrix(self, elapsed: f32) -> glam::Mat4 {
+        glam::Mat4::from_translation(self.calculate(elapsed))
     }
 }
+
+#[derive(Clone, Copy)]
+enum ScaleFunc {
+    Identity,
+    StaticUniform,
+    StaticNonUniform,
+    DynamicUniform,
+    DynamicNonUniform,
+}
+
+fn calculate_lerp(elapsed_time: f32, loop_duration: f32) -> f32 {
+    let mut value = (elapsed_time % loop_duration) / loop_duration;
+    if value > 0.5 {
+        value = 1.0 - value;
+    }
+    value * 2.0
+}
+
+impl ScaleFunc {
+    fn calculate(self, elapsed_time: f32) -> glam::Vec3 {
+        match self {
+            ScaleFunc::Identity => glam::Vec3::ONE,
+            ScaleFunc::StaticUniform => glam::Vec3::ONE * 4.0,
+            ScaleFunc::StaticNonUniform => glam::Vec3::new(0.5, 1.0, 10.0),
+            ScaleFunc::DynamicUniform => {
+                const LOOP_DURATION: f32 = 3.0;
+                let value = calculate_lerp(elapsed_time, LOOP_DURATION);
+                glam::Vec3::ONE * f32::lerp(1.0, 4.0, value)
+            }
+            ScaleFunc::DynamicNonUniform => {
+                const LOOP_DURATION_X: f32 = 3.0;
+                const LOOP_DURATION_Z: f32 = 3.0;
+                let value_x = calculate_lerp(elapsed_time, LOOP_DURATION_X);
+                let value_z = calculate_lerp(elapsed_time, LOOP_DURATION_Z);
+                glam::Vec3::new(
+                    f32::lerp(1.0, 0.5, value_x),
+                    1.0,
+                    f32::lerp(1.0, 10.0, value_z),
+                )
+            }
+        }
+    }
+    fn matrix(self, elapsed: f32, offset: glam::Vec3) -> glam::Mat4 {
+        let scale = self.calculate(elapsed);
+        glam::Mat4::from_cols(
+            glam::Vec4::X * scale.x,
+            glam::Vec4::Y * scale.y,
+            glam::Vec4::Z * scale.z,
+            offset.extend(1.0),
+        )
+    }
+}
+
 fn calculate_frustum_scale(fov_degrees: f32) -> f32 {
     let fov_radians = fov_degrees.to_radians();
     (fov_radians * 0.5).tan().recip()
@@ -176,10 +230,6 @@ impl Application for App {
         matrix[11] = -1.0;
 
         program.set_used();
-        program.set_uniform(
-            model_to_camera_matrix_location,
-            OffsetFunc::Stationary.offset_matrix(0.0),
-        );
         program.set_uniform(camera_to_clip_location, matrix);
         program.set_unused();
 
@@ -206,9 +256,11 @@ impl Application for App {
         self.vertex_array_object.bind();
         let elapsed = self.window.glfw.get_time() as f32;
         let matrices = [
-            OffsetFunc::Stationary.offset_matrix(elapsed),
-            OffsetFunc::Oval.offset_matrix(elapsed),
-            OffsetFunc::BottomCircle.offset_matrix(elapsed),
+            ScaleFunc::Identity.matrix(elapsed, Vec3::new(0.0, 0.0, -45.0)),
+            ScaleFunc::StaticUniform.matrix(elapsed, Vec3::new(-10.0, -10.0, -45.0)),
+            ScaleFunc::StaticNonUniform.matrix(elapsed, Vec3::new(-10.0, 10.0, -45.0)),
+            ScaleFunc::DynamicUniform.matrix(elapsed, Vec3::new(10.0, 10.0, -45.0)),
+            ScaleFunc::DynamicNonUniform.matrix(elapsed, Vec3::new(10.0, -10.0, -45.0)),
         ];
         for m in matrices {
             self.program
