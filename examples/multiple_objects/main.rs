@@ -18,9 +18,9 @@ struct App {
     window: PWindow,
     gl: OpenGl,
     program: Program,
-    vertex_buffer_object: VertexArrayObject,
-    vertex_buffer: Buffer<f32>,
-    index_buffer: Buffer<u32>,
+    vertex_array_object: VertexArrayObject,
+    _vertex_buffer: Buffer<f32>,
+    _index_buffer: Buffer<u32>,
     offset_location: GLLocation,
     perspective_matrix_location: GLLocation,
     perspective_matrix: [f32; 16],
@@ -226,9 +226,9 @@ impl Application for App {
         Self {
             gl,
             program,
-            vertex_buffer_object,
-            vertex_buffer,
-            index_buffer,
+            vertex_array_object: vertex_buffer_object,
+            _vertex_buffer: vertex_buffer,
+            _index_buffer: index_buffer,
             window,
             offset_location,
             perspective_matrix_location,
@@ -244,7 +244,7 @@ impl Application for App {
 
         self.program.set_used();
 
-        self.vertex_buffer_object.bind();
+        self.vertex_array_object.bind();
         self.program
             .set_uniform(self.offset_location, (0.0, 0.0, 0.5));
         self.gl.draw_elements(
@@ -264,7 +264,7 @@ impl Application for App {
             (NUMBER_OF_VERTICES / 2) as i32,
         );
 
-        self.vertex_buffer_object.unbind();
+        self.vertex_array_object.unbind();
         self.program.set_unused();
     }
 
