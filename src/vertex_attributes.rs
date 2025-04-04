@@ -1,5 +1,3 @@
-use std::os::raw::c_void;
-
 use gl::types::{GLenum, GLint, GLsizei, GLuint};
 
 use crate::{GLHandle, NULL_HANDLE};

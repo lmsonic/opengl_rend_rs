@@ -3,7 +3,7 @@ use std::{
     ptr,
 };
 
-use gl::types::{GLbitfield, GLchar, GLenum, GLfloat, GLint, GLsizei, GLuint};
+use gl::types::{GLchar, GLenum, GLfloat, GLint, GLsizei, GLuint};
 use glfw::Window;
 pub struct OpenGl;
 
@@ -91,6 +91,64 @@ pub enum IndexSize {
     UnsignedByte = gl::UNSIGNED_BYTE,
     UnsignedShort = gl::UNSIGNED_SHORT,
     UnsignedInt = gl::UNSIGNED_INT,
+}
+
+#[derive(Clone, Copy)]
+#[repr(u32)]
+pub enum DepthFunc {
+    Never = gl::NEVER,
+    Less = gl::LESS,
+    Equal = gl::EQUAL,
+    LessEqual = gl::LEQUAL,
+    Greater = gl::GREATER,
+    NotEqual = gl::NOTEQUAL,
+    GreaterEqual = gl::GEQUAL,
+    Always = gl::ALWAYS,
+}
+
+use bitflags::bitflags;
+bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct ClearFlags : u32 {
+       const Color = gl::COLOR_BUFFER_BIT;
+       const Depth = gl::DEPTH_BUFFER_BIT;
+       const Stencil = gl::STENCIL_BUFFER_BIT;
+    }
+}
+
+mod private {
+    pub trait Sealed {}
+}
+pub trait AsFloat: private::Sealed {
+    fn set_depth_range(near: Self, far: Self);
+    fn clear_depth(self);
+}
+
+impl private::Sealed for f32 {}
+
+impl AsFloat for f32 {
+    fn set_depth_range(near: Self, far: Self) {
+        unsafe { gl::DepthRangef(near, far) };
+    }
+
+    fn clear_depth(self) {
+        unsafe {
+            gl::ClearDepthf(self);
+        }
+    }
+}
+impl private::Sealed for f64 {}
+
+impl AsFloat for f64 {
+    fn set_depth_range(near: Self, far: Self) {
+        unsafe { gl::DepthRange(near, far) };
+    }
+
+    fn clear_depth(self) {
+        unsafe {
+            gl::ClearDepth(self);
+        }
+    }
 }
 
 extern "system" fn gl_debug_output(
@@ -182,8 +240,8 @@ impl OpenGl {
     pub fn clear_color(&mut self, red: GLfloat, green: GLfloat, blue: GLfloat, alpha: GLfloat) {
         unsafe { gl::ClearColor(red, green, blue, alpha) };
     }
-    pub fn clear(&mut self, mask: GLbitfield) {
-        unsafe { gl::Clear(mask) };
+    pub fn clear(&mut self, mask: ClearFlags) {
+        unsafe { gl::Clear(mask.bits()) };
     }
     pub fn draw_arrays(&mut self, mode: DrawMode, first: GLint, count: GLsizei) {
         unsafe { gl::DrawArrays(mode as GLenum, first, count) };
@@ -222,6 +280,24 @@ impl OpenGl {
                 base_vertex,
             )
         };
+    }
+
+    pub fn depth_func(&mut self, mode: DepthFunc) {
+        unsafe { gl::DepthFunc(mode as GLenum) };
+    }
+    pub fn set_depth_mask(&mut self, value: bool) {
+        if value {
+            unsafe { gl::DepthMask(gl::TRUE) };
+        } else {
+            unsafe { gl::DepthMask(gl::FALSE) };
+        }
+    }
+    pub fn depth_range<T: AsFloat>(&mut self, near: T, far: T) {
+        T::set_depth_range(near, far);
+    }
+
+    pub fn clear_depth<T: AsFloat>(&mut self, value: T) {
+        value.clear_depth();
     }
 
     pub fn viewport(&mut self, x: GLsizei, y: GLsizei, width: GLsizei, height: GLsizei) {

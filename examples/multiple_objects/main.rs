@@ -1,10 +1,13 @@
+#![forbid(unsafe_code)]
 use std::ffi::CString;
 
 use gl::types::GLsizei;
 use glfw::{Action, Key, Modifiers, PWindow};
 use opengl_rend::app::{run_app, Application};
 use opengl_rend::buffer::{BufferType, Usage};
-use opengl_rend::opengl::{Capability, CullMode, DrawMode, FrontFace, IndexSize};
+use opengl_rend::opengl::{
+    Capability, ClearFlags, CullMode, DepthFunc, DrawMode, FrontFace, IndexSize,
+};
 use opengl_rend::program::{GLLocation, Shader, ShaderType};
 use opengl_rend::vertex_attributes::{DataType, VertexAttribute};
 use opengl_rend::{
@@ -192,6 +195,12 @@ impl Application for App {
         gl.front_face(FrontFace::CW);
         // gl.polygon_mode(PolygonMode::Line);
 
+        // enable depth test
+        gl.enable(Capability::DepthTest);
+        gl.set_depth_mask(true);
+        gl.depth_func(DepthFunc::LessEqual);
+        gl.depth_range(0.0, 1.0);
+
         // get and set uniforms
         let offset_location = program.get_uniform_location(c"offset").unwrap();
 
@@ -228,7 +237,8 @@ impl Application for App {
 
     fn display(&mut self) {
         self.gl.clear_color(0.5, 0.5, 0.5, 0.0);
-        self.gl.clear(gl::COLOR_BUFFER_BIT);
+        self.gl.clear_depth(1.0);
+        self.gl.clear(ClearFlags::Color | ClearFlags::Depth);
 
         self.program.set_used();
 
@@ -243,7 +253,7 @@ impl Application for App {
         );
 
         self.program
-            .set_uniform(self.offset_location, (0.0, 0.0, -1.0));
+            .set_uniform(self.offset_location, (0.0, 0.0, -0.3));
         self.gl.draw_elements_base_vertex(
             DrawMode::Triangles,
             INDEX_DATA.len() as GLsizei,
