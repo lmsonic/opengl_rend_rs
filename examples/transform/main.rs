@@ -1,15 +1,14 @@
 #![forbid(unsafe_code)]
-use std::f32::consts::TAU;
+use std::collections::VecDeque;
 use std::ffi::CString;
 
 use gl::types::GLsizei;
-use glam::{FloatExt, Mat3, Mat4, Vec3};
+use glam::{Mat4, Vec3};
 use glfw::{Action, Key, Modifiers, PWindow};
 use opengl_rend::app::{run_app, Application};
 use opengl_rend::buffer::{BufferType, Usage};
-use opengl_rend::opengl::{
-    Capability, ClearFlags, CullMode, DepthFunc, DrawMode, FrontFace, IndexSize,
-};
+use opengl_rend::opengl::DrawMode::Triangles;
+use opengl_rend::opengl::{Capability, ClearFlags, CullMode, DepthFunc, FrontFace, IndexSize};
 use opengl_rend::program::{GLLocation, Shader, ShaderType};
 use opengl_rend::vertex_attributes::{DataType, VertexAttribute};
 use opengl_rend::{
@@ -27,229 +26,353 @@ struct App {
     model_to_camera_matrix_location: GLLocation,
     perspective_matrix: [f32; 16],
     _depth_clamping: bool,
+    hierarchy: Hierarchy,
 }
 
 const GREEN_COLOR: [f32; 4] = [0.75, 0.75, 1.0, 1.0];
 const BLUE_COLOR: [f32; 4] = [0.0, 0.5, 0.0, 1.0];
 const RED_COLOR: [f32; 4] = [1.0, 0.0, 0.0, 1.0];
-const BROWN_COLOR: [f32; 4] = [0.5, 0.5, 0.0, 1.0];
+const YELLOW_COLOR: [f32; 4] = [1.0, 1.0, 0.0, 1.0];
+const CYAN_COLOR: [f32; 4] = [0.0, 1.0, 1.0, 1.0];
+const MAGENTA_COLOR: [f32; 4] = [1.0, 0.0, 1.0, 1.0];
 
-const NUMBER_OF_VERTICES: usize = 8;
+const NUMBER_OF_VERTICES: usize = 24;
 
 #[rustfmt::skip]
-const VERTEX_DATA: [f32;56] = [
+const VERTEX_DATA: [f32;168] = [
+    //Front
     1.0, 1.0, 1.0,
-    -1.0, -1.0, 1.0,
-    -1.0, 1.0, -1.0,
-    1.0, -1.0, -1.0,
-
-    -1.0, -1.0, -1.0,
-    1.0, 1.0, -1.0,
     1.0, -1.0, 1.0,
+    -1.0, -1.0, 1.0,
     -1.0, 1.0, 1.0,
 
-    GREEN_COLOR[0],GREEN_COLOR[1],GREEN_COLOR[2],GREEN_COLOR[3],
-    BLUE_COLOR[0],BLUE_COLOR[1],BLUE_COLOR[2],BLUE_COLOR[3],
-    RED_COLOR[0],RED_COLOR[1],RED_COLOR[2],RED_COLOR[3],
-    BROWN_COLOR[0],BROWN_COLOR[1],BROWN_COLOR[2],BROWN_COLOR[3],
+    //Top
+    1.0, 1.0, 1.0,
+    -1.0, 1.0, 1.0,
+    -1.0, 1.0, -1.0,
+    1.0, 1.0, -1.0,
+
+    //Let
+    1.0, 1.0, 1.0,
+    1.0, 1.0, -1.0,
+    1.0, -1.0, -1.0,
+    1.0, -1.0, 1.0,
+
+    //Back
+    1.0, 1.0, -1.0,
+    -1.0, 1.0, -1.0,
+    -1.0, -1.0, -1.0,
+    1.0, -1.0, -1.0,
+
+    //Bottom
+    1.0, -1.0, 1.0,
+    1.0, -1.0, -1.0,
+    -1.0, -1.0, -1.0,
+    -1.0, -1.0, 1.0,
+
+    //Right
+    -1.0, 1.0, 1.0,
+    -1.0, -1.0, 1.0,
+    -1.0, -1.0, -1.0,
+    -1.0, 1.0, -1.0,
 
     GREEN_COLOR[0],GREEN_COLOR[1],GREEN_COLOR[2],GREEN_COLOR[3],
+    GREEN_COLOR[0],GREEN_COLOR[1],GREEN_COLOR[2],GREEN_COLOR[3],
+    GREEN_COLOR[0],GREEN_COLOR[1],GREEN_COLOR[2],GREEN_COLOR[3],
+    GREEN_COLOR[0],GREEN_COLOR[1],GREEN_COLOR[2],GREEN_COLOR[3],
+
     BLUE_COLOR[0],BLUE_COLOR[1],BLUE_COLOR[2],BLUE_COLOR[3],
+    BLUE_COLOR[0],BLUE_COLOR[1],BLUE_COLOR[2],BLUE_COLOR[3],
+    BLUE_COLOR[0],BLUE_COLOR[1],BLUE_COLOR[2],BLUE_COLOR[3],
+    BLUE_COLOR[0],BLUE_COLOR[1],BLUE_COLOR[2],BLUE_COLOR[3],
+
     RED_COLOR[0],RED_COLOR[1],RED_COLOR[2],RED_COLOR[3],
-    BROWN_COLOR[0],BROWN_COLOR[1],BROWN_COLOR[2],BROWN_COLOR[3],
+    RED_COLOR[0],RED_COLOR[1],RED_COLOR[2],RED_COLOR[3],
+    RED_COLOR[0],RED_COLOR[1],RED_COLOR[2],RED_COLOR[3],
+    RED_COLOR[0],RED_COLOR[1],RED_COLOR[2],RED_COLOR[3],
+
+    YELLOW_COLOR[0],YELLOW_COLOR[1],YELLOW_COLOR[2],YELLOW_COLOR[3],
+    YELLOW_COLOR[0],YELLOW_COLOR[1],YELLOW_COLOR[2],YELLOW_COLOR[3],
+    YELLOW_COLOR[0],YELLOW_COLOR[1],YELLOW_COLOR[2],YELLOW_COLOR[3],
+    YELLOW_COLOR[0],YELLOW_COLOR[1],YELLOW_COLOR[2],YELLOW_COLOR[3],
+
+    CYAN_COLOR[0],CYAN_COLOR[1],CYAN_COLOR[2],CYAN_COLOR[3],
+    CYAN_COLOR[0],CYAN_COLOR[1],CYAN_COLOR[2],CYAN_COLOR[3],
+    CYAN_COLOR[0],CYAN_COLOR[1],CYAN_COLOR[2],CYAN_COLOR[3],
+    CYAN_COLOR[0],CYAN_COLOR[1],CYAN_COLOR[2],CYAN_COLOR[3],
+    
+    MAGENTA_COLOR[0],MAGENTA_COLOR[1],MAGENTA_COLOR[2],MAGENTA_COLOR[3],
+    MAGENTA_COLOR[0],MAGENTA_COLOR[1],MAGENTA_COLOR[2],MAGENTA_COLOR[3],
+    MAGENTA_COLOR[0],MAGENTA_COLOR[1],MAGENTA_COLOR[2],MAGENTA_COLOR[3],
+    MAGENTA_COLOR[0],MAGENTA_COLOR[1],MAGENTA_COLOR[2],MAGENTA_COLOR[3],
+   
 
 ];
 
 #[rustfmt::skip]
-const INDEX_DATA: [u32;24] =[
+const INDEX_DATA: [u32;36] =[
 	0, 1, 2,
-	1, 0, 3,
 	2, 3, 0,
-	3, 2, 1,
 
-	5, 4, 6,
-	4, 5, 7,
-	7, 6, 4,
-	6, 7, 5,
+	4, 5, 6,
+	6, 7, 4,
+
+	8, 9, 10,
+	10, 11, 8,
+
+	12, 13, 14,
+	14, 15, 12,
+
+	16, 17, 18,
+	18, 19, 16,
+
+	20, 21, 22,
+	22, 23, 20,
 ];
-
-#[derive(Clone, Copy)]
-enum OffsetFunc {
-    Stationary,
-    Oval,
-    BottomCircle,
-}
-
-impl OffsetFunc {
-    fn calculate(self, elapsed_time: f32) -> Vec3 {
-        match self {
-            OffsetFunc::Stationary => Vec3::new(0.0, 0.0, -20.0),
-            OffsetFunc::Oval => {
-                const LOOP_DURATION: f32 = 3.0;
-                const SCALE: f32 = TAU / LOOP_DURATION;
-                let current_time = elapsed_time % LOOP_DURATION;
-                Vec3::new(
-                    f32::cos(current_time * SCALE) * 4.0,
-                    f32::sin(current_time * SCALE) * 6.0,
-                    -20.0,
-                )
-            }
-            OffsetFunc::BottomCircle => {
-                const LOOP_DURATION: f32 = 12.0;
-                const SCALE: f32 = TAU / LOOP_DURATION;
-                let current_time = elapsed_time % LOOP_DURATION;
-                Vec3::new(
-                    f32::cos(current_time * SCALE) * 5.0,
-                    -3.5,
-                    f32::sin(current_time * SCALE) * 5.0 - 20.0,
-                )
-            }
-        }
-    }
-    fn matrix(self, elapsed: f32) -> Mat4 {
-        Mat4::from_translation(self.calculate(elapsed))
-    }
-}
-
-#[derive(Clone, Copy)]
-enum ScaleFunc {
-    Identity,
-    StaticUniform,
-    StaticNonUniform,
-    DynamicUniform,
-    DynamicNonUniform,
-}
-
-fn calculate_lerp(elapsed_time: f32, loop_duration: f32) -> f32 {
-    let mut value = (elapsed_time % loop_duration) / loop_duration;
-    if value > 0.5 {
-        value = 1.0 - value;
-    }
-    value * 2.0
-}
-
-impl ScaleFunc {
-    fn calculate(self, elapsed_time: f32) -> Vec3 {
-        match self {
-            ScaleFunc::Identity => Vec3::ONE,
-            ScaleFunc::StaticUniform => Vec3::ONE * 4.0,
-            ScaleFunc::StaticNonUniform => Vec3::new(0.5, 1.0, 10.0),
-            ScaleFunc::DynamicUniform => {
-                const LOOP_DURATION: f32 = 3.0;
-                let value = calculate_lerp(elapsed_time, LOOP_DURATION);
-                Vec3::ONE * f32::lerp(1.0, 4.0, value)
-            }
-            ScaleFunc::DynamicNonUniform => {
-                const LOOP_DURATION_X: f32 = 3.0;
-                const LOOP_DURATION_Z: f32 = 3.0;
-                let value_x = calculate_lerp(elapsed_time, LOOP_DURATION_X);
-                let value_z = calculate_lerp(elapsed_time, LOOP_DURATION_Z);
-                Vec3::new(
-                    f32::lerp(1.0, 0.5, value_x),
-                    1.0,
-                    f32::lerp(1.0, 10.0, value_z),
-                )
-            }
-        }
-    }
-    fn matrix(self, elapsed: f32, offset: Vec3) -> Mat4 {
-        let scale = self.calculate(elapsed);
-        Mat4::from_cols(
-            glam::Vec4::X * scale.x,
-            glam::Vec4::Y * scale.y,
-            glam::Vec4::Z * scale.z,
-            offset.extend(1.0),
-        )
-    }
-}
-
-fn calculate_angle(elapsed_time: f32, loop_duration: f32) -> f32 {
-    let scale = TAU / loop_duration;
-    let current_time = elapsed_time % loop_duration;
-    current_time * scale
-}
-
-#[derive(Clone, Copy)]
-enum RotationFunc {
-    Identity,
-    RotateX,
-    RotateY,
-    RotateZ,
-    RotateAxis,
-}
-
-impl RotationFunc {
-    fn calculate(self, elapsed_time: f32) -> Mat3 {
-        match self {
-            RotationFunc::Identity => Mat3::IDENTITY,
-            RotationFunc::RotateX => {
-                let angle = calculate_angle(elapsed_time, 3.0);
-                let (sin, cos) = angle.sin_cos();
-                let mut m = Mat3::IDENTITY;
-                m.col_mut(1).y = cos;
-                m.col_mut(1).z = sin;
-
-                m.col_mut(2).y = -sin;
-                m.col_mut(2).z = cos;
-                m
-            }
-            RotationFunc::RotateY => {
-                let angle = calculate_angle(elapsed_time, 2.0);
-                let (sin, cos) = angle.sin_cos();
-                let mut m = Mat3::IDENTITY;
-                m.col_mut(0).x = cos;
-                m.col_mut(0).z = -sin;
-
-                m.col_mut(2).x = sin;
-                m.col_mut(2).z = cos;
-                m
-            }
-            RotationFunc::RotateZ => {
-                let angle = calculate_angle(elapsed_time, 2.0);
-                let (sin, cos) = angle.sin_cos();
-                let mut m = Mat3::IDENTITY;
-                m.col_mut(0).x = cos;
-                m.col_mut(0).y = sin;
-
-                m.col_mut(1).x = -sin;
-                m.col_mut(1).y = cos;
-                m
-            }
-            RotationFunc::RotateAxis => {
-                let angle = calculate_angle(elapsed_time, 2.0);
-                let (sin, cos) = angle.sin_cos();
-                let inv_cos = 1.0 - cos;
-
-                let axis = Vec3::ONE.normalize();
-                let x = axis.x;
-                let y = axis.y;
-                let z = axis.z;
-
-                let mut m = Mat3::IDENTITY;
-                m.col_mut(0).x = (x * x) + ((1.0 - x * x) * cos);
-                m.col_mut(1).x = x * y * (inv_cos) - (z * sin);
-                m.col_mut(2).x = x * z * (inv_cos) + (y * sin);
-
-                m.col_mut(0).y = x * y * (inv_cos) + (z * sin);
-                m.col_mut(1).y = (y * y) + ((1.0 - y * y) * cos);
-                m.col_mut(2).y = y * z * (inv_cos) - (x * sin);
-
-                m.col_mut(0).z = x * z * (inv_cos) - (y * sin);
-                m.col_mut(1).z = y * z * (inv_cos) + (x * sin);
-                m.col_mut(2).z = (z * z) + ((1.0 - z * z) * cos);
-                m
-            }
-        }
-    }
-    fn matrix(self, elapsed: f32, offset: Vec3) -> Mat4 {
-        let rotation = self.calculate(elapsed);
-        Mat4::from_mat3_translation(rotation, offset)
-    }
-}
 
 fn calculate_frustum_scale(fov_degrees: f32) -> f32 {
     let fov_radians = fov_degrees.to_radians();
     (fov_radians * 0.5).tan().recip()
+}
+
+struct MatrixStack {
+    current_matrix: Mat4,
+    stack: Vec<Mat4>,
+}
+
+impl MatrixStack {
+    fn new() -> Self {
+        Self {
+            current_matrix: Mat4::IDENTITY,
+            stack: vec![],
+        }
+    }
+    fn top(&self) -> glam::Mat4 {
+        self.current_matrix
+    }
+    fn push(&mut self) {
+        self.stack.push(self.current_matrix);
+    }
+    fn pop(&mut self) {
+        if let Some(new_matrix) = self.stack.pop() {
+            self.current_matrix = new_matrix;
+        };
+    }
+    fn rotate_x(&mut self, angle: f32) {
+        self.current_matrix *= Mat4::from_rotation_x(angle);
+    }
+    fn rotate_y(&mut self, angle: f32) {
+        self.current_matrix *= Mat4::from_rotation_y(angle);
+    }
+    fn rotate_z(&mut self, angle: f32) {
+        self.current_matrix *= Mat4::from_rotation_z(angle);
+    }
+    fn scale(&mut self, scale: Vec3) {
+        self.current_matrix *= Mat4::from_scale(scale);
+    }
+    fn translate(&mut self, translation: Vec3) {
+        self.current_matrix *= Mat4::from_translation(translation);
+    }
+}
+
+struct Hierarchy {
+    stack: MatrixStack,
+    base_pos: Vec3,
+    base_ang: f32,
+    base_scale_z: f32,
+
+    base_left_pos: Vec3,
+    base_right_pos: Vec3,
+
+    upper_arm_ang: f32,
+    upper_arm_size: f32,
+    lower_arm_pos: Vec3,
+    lower_arm_ang: f32,
+    lower_arm_len: f32,
+    lower_arm_width: f32,
+
+    wrist_pos: Vec3,
+    wrist_roll_ang: f32,
+    wrist_pitch_ang: f32,
+    wrist_len: f32,
+    wrist_width: f32,
+
+    left_finger_pos: Vec3,
+    right_finger_pos: Vec3,
+    finger_open_ang: f32,
+    finger_len: f32,
+    finger_width: f32,
+    lower_finger_ang: f32,
+}
+
+impl Hierarchy {
+    fn new() -> Self {
+        Self {
+            stack: MatrixStack::new(),
+            base_pos: Vec3::new(3.0, -5.0, -40.0),
+            base_ang: -45.0,
+            base_scale_z: 3.0,
+            base_left_pos: Vec3::new(2.0, 0.0, 0.0),
+            base_right_pos: Vec3::new(-2.0, 0.0, 0.0),
+            upper_arm_ang: -33.75,
+            upper_arm_size: 9.0,
+            lower_arm_pos: Vec3::new(0.0, 0.0, 8.0),
+            lower_arm_ang: 146.25,
+            lower_arm_len: 5.0,
+            lower_arm_width: 1.5,
+            wrist_pos: Vec3::new(30.0, 0.0, 5.0),
+            wrist_roll_ang: 0.0,
+            wrist_pitch_ang: 67.5,
+            wrist_len: 2.0,
+            wrist_width: 2.0,
+            left_finger_pos: Vec3::new(1.0, 0.0, 1.0),
+            right_finger_pos: Vec3::new(-1.0, 0.0, 1.0),
+            finger_open_ang: 180.0,
+            finger_len: 2.0,
+            finger_width: 0.5,
+            lower_finger_ang: 45.0,
+        }
+    }
+    fn draw(&mut self, gl: &mut OpenGl, program: &mut Program, matrix_location: GLLocation) {
+        self.stack.translate(self.base_pos);
+        self.stack.rotate_y(self.base_ang);
+        {
+            // left base
+            self.stack.push();
+            self.stack.translate(self.base_left_pos);
+            self.stack.scale(Vec3::new(1.0, 1.0, self.base_scale_z));
+            program.set_uniform(matrix_location, self.stack.top());
+            gl.draw_elements(
+                Triangles,
+                INDEX_DATA.len() as GLsizei,
+                IndexSize::UnsignedInt,
+                0,
+            );
+            self.stack.pop();
+        }
+        {
+            // right base
+            self.stack.push();
+            self.stack.translate(self.base_right_pos);
+            self.stack.scale(Vec3::new(1.0, 1.0, self.base_scale_z));
+            program.set_uniform(matrix_location, self.stack.top());
+            gl.draw_elements(
+                Triangles,
+                INDEX_DATA.len() as GLsizei,
+                IndexSize::UnsignedInt,
+                0,
+            );
+            self.stack.pop();
+        }
+
+        self.draw_upper_arm(program, gl, matrix_location);
+    }
+    fn draw_upper_arm(
+        &mut self,
+        program: &mut Program,
+        gl: &mut OpenGl,
+        matrix_location: GLLocation,
+    ) {
+        self.stack.push();
+
+        self.stack.rotate_x(self.upper_arm_ang);
+        {
+            self.stack.push();
+
+            self.stack
+                .translate(Vec3::Z * (self.upper_arm_size / 2.0 - 1.0));
+            self.stack
+                .scale(Vec3::new(1.0, 1.0, self.upper_arm_size / 2.0));
+
+            program.set_uniform(matrix_location, self.stack.top());
+            gl.draw_elements(
+                Triangles,
+                INDEX_DATA.len() as GLsizei,
+                IndexSize::UnsignedInt,
+                0,
+            );
+            self.stack.pop();
+        }
+        self.draw_lower_arm(program, gl, matrix_location);
+        self.stack.pop();
+    }
+
+    fn draw_lower_arm(
+        &mut self,
+        program: &mut Program,
+        gl: &mut OpenGl,
+        matrix_location: GLLocation,
+    ) {
+        self.stack.push();
+
+        self.stack.translate(self.lower_arm_pos);
+        self.stack.rotate_x(self.lower_arm_ang);
+        {
+            self.stack.push();
+
+            self.stack.translate(Vec3::Z * (self.lower_arm_len / 2.0));
+            self.stack.scale(Vec3::new(
+                self.lower_arm_width / 2.0,
+                self.lower_arm_width / 2.0,
+                self.lower_arm_len / 2.0,
+            ));
+
+            program.set_uniform(matrix_location, self.stack.top());
+            gl.draw_elements(
+                Triangles,
+                INDEX_DATA.len() as GLsizei,
+                IndexSize::UnsignedInt,
+                0,
+            );
+            self.stack.pop();
+        }
+        self.draw_wrist(program, gl, matrix_location);
+        self.stack.pop();
+    }
+
+    fn draw_wrist(&mut self, program: &mut Program, gl: &mut OpenGl, matrix_location: GLLocation) {
+        self.stack.push();
+
+        self.stack.translate(self.wrist_pos);
+        self.stack.rotate_z(self.wrist_roll_ang);
+        self.stack.rotate_x(self.wrist_pitch_ang);
+
+        {
+            self.stack.push();
+
+            self.stack.scale(Vec3::new(
+                self.wrist_width / 2.0,
+                self.wrist_width / 2.0,
+                self.wrist_len / 2.0,
+            ));
+
+            program.set_uniform(matrix_location, self.stack.top());
+            gl.draw_elements(
+                Triangles,
+                INDEX_DATA.len() as GLsizei,
+                IndexSize::UnsignedInt,
+                0,
+            );
+            self.stack.pop();
+        }
+        self.draw_fingers(program, gl, matrix_location);
+        self.stack.pop();
+    }
+
+    fn draw_fingers(
+        &mut self,
+        program: &mut Program,
+        gl: &mut OpenGl,
+        matrix_location: GLLocation,
+    ) {
+        // draw left finger
+        self.stack.push();
+
+        self.stack.translate(self.left_finger_pos);
+        self.stack.rotate_y(self.finger_open_ang);
+
+        self.stack.pop();
+    }
 }
 
 impl Application for App {
@@ -328,6 +451,7 @@ impl Application for App {
             perspective_matrix: matrix,
             _depth_clamping: false,
             model_to_camera_matrix_location,
+            hierarchy: Hierarchy::new(),
         }
     }
 
@@ -335,27 +459,14 @@ impl Application for App {
         self.gl.clear_color(0.1, 0.1, 0.1, 0.0);
         self.gl.clear_depth(1.0);
         self.gl.clear(ClearFlags::Color | ClearFlags::Depth);
-
         self.program.set_used();
         self.vertex_array_object.bind();
-        let elapsed = self.window.glfw.get_time() as f32;
-        let matrices = [
-            RotationFunc::Identity.matrix(elapsed, Vec3::new(0.0, 0.0, -45.0)),
-            RotationFunc::RotateX.matrix(elapsed, Vec3::new(-10.0, -10.0, -45.0)),
-            RotationFunc::RotateY.matrix(elapsed, Vec3::new(-10.0, 10.0, -45.0)),
-            RotationFunc::RotateZ.matrix(elapsed, Vec3::new(10.0, 10.0, -45.0)),
-            RotationFunc::RotateAxis.matrix(elapsed, Vec3::new(10.0, -10.0, -45.0)),
-        ];
-        for m in matrices {
-            self.program
-                .set_uniform(self.model_to_camera_matrix_location, m);
-            self.gl.draw_elements(
-                DrawMode::Triangles,
-                INDEX_DATA.len() as i32,
-                IndexSize::UnsignedInt,
-                0,
-            );
-        }
+
+        self.hierarchy.draw(
+            &mut self.gl,
+            &mut self.program,
+            self.model_to_camera_matrix_location,
+        );
 
         self.vertex_array_object.unbind();
         self.program.set_unused();
