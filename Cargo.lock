@@ -33,6 +33,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "easy-tree"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b81fe01e50aceec379af69772402529cfba1a5d53266b0bace467811e395b4f"
+
+[[package]]
 name = "gl"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -119,6 +125,7 @@ name = "opengl-rend"
 version = "0.1.0"
 dependencies = [
  "bitflags 2.9.0",
+ "easy-tree",
  "gl",
  "glam",
  "glfw",
