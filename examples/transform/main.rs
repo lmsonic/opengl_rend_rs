@@ -285,6 +285,48 @@ impl Hierarchy {
         }
         self.upper_arm_ang = self.upper_arm_ang.clamp(-90.0, 0.0);
     }
+    fn increment_lower_arm_ang(&mut self, positive: bool) {
+        if positive {
+            self.lower_arm_ang += Self::STANDARD_ANGLE_INCREMENT;
+        } else {
+            self.lower_arm_ang -= Self::STANDARD_ANGLE_INCREMENT;
+        }
+        self.lower_arm_ang = self.lower_arm_ang.clamp(0.0, 146.25);
+    }
+    fn increment_wrist_pitch(&mut self, positive: bool) {
+        if positive {
+            self.wrist_pitch_ang += Self::STANDARD_ANGLE_INCREMENT;
+        } else {
+            self.wrist_pitch_ang -= Self::STANDARD_ANGLE_INCREMENT;
+        }
+        self.wrist_pitch_ang %= 360.0
+    }
+    fn increment_wrist_roll(&mut self, positive: bool) {
+        if positive {
+            self.wrist_roll_ang += Self::STANDARD_ANGLE_INCREMENT;
+        } else {
+            self.wrist_roll_ang -= Self::STANDARD_ANGLE_INCREMENT;
+        }
+        self.wrist_roll_ang %= 360.0
+    }
+
+    fn increment_finger_ang(&mut self, positive: bool) {
+        if positive {
+            self.finger_open_ang += Self::SMALL_ANGLE_INCREMENT;
+        } else {
+            self.finger_open_ang -= Self::SMALL_ANGLE_INCREMENT;
+        }
+        self.finger_open_ang = self.finger_open_ang.clamp(9.0, 180.0);
+    }
+
+    fn write_angle(&self) {
+        dbg!(self.base_ang);
+        dbg!(self.upper_arm_ang);
+        dbg!(self.lower_arm_ang);
+        dbg!(self.wrist_roll_ang);
+        dbg!(self.wrist_pitch_ang);
+        dbg!(self.finger_open_ang);
+    }
 
     fn set_transform(&mut self, transform: Transform) {
         if transform.position != Vec3::ZERO {
@@ -552,7 +594,25 @@ impl Application for App {
         self.program.set_unused();
     }
 
-    fn keyboard(&mut self, _key: Key, _action: Action, _modifier: Modifiers) {}
+    fn keyboard(&mut self, key: Key, action: Action, _modifier: Modifiers) {
+        if action == Action::Press || action == Action::Repeat {
+            match key {
+                Key::A => self.hierarchy.increment_base_ang(true),
+                Key::D => self.hierarchy.increment_base_ang(false),
+                Key::W => self.hierarchy.increment_upper_arm_ang(true),
+                Key::S => self.hierarchy.increment_upper_arm_ang(false),
+                Key::R => self.hierarchy.increment_lower_arm_ang(true),
+                Key::F => self.hierarchy.increment_lower_arm_ang(false),
+                Key::T => self.hierarchy.increment_wrist_pitch(true),
+                Key::G => self.hierarchy.increment_wrist_pitch(false),
+                Key::Z => self.hierarchy.increment_wrist_roll(true),
+                Key::C => self.hierarchy.increment_wrist_roll(false),
+                Key::Q => self.hierarchy.increment_finger_ang(true),
+                Key::E => self.hierarchy.increment_finger_ang(false),
+                _ => {}
+            }
+        }
+    }
 
     fn reshape(&mut self, width: i32, height: i32) {
         let frustum_scale = calculate_frustum_scale(45.0);
