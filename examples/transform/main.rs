@@ -1,5 +1,4 @@
 #![forbid(unsafe_code)]
-use std::collections::VecDeque;
 use std::ffi::CString;
 
 use gl::types::GLsizei;
@@ -7,8 +6,9 @@ use glam::{Mat4, Vec3};
 use glfw::{Action, Key, Modifiers, PWindow};
 use opengl_rend::app::{run_app, Application};
 use opengl_rend::buffer::{BufferType, Usage};
-use opengl_rend::opengl::DrawMode::Triangles;
-use opengl_rend::opengl::{Capability, ClearFlags, CullMode, DepthFunc, FrontFace, IndexSize};
+use opengl_rend::opengl::{
+    Capability, ClearFlags, CullMode, DepthFunc, DrawMode, FrontFace, IndexSize, PolygonMode,
+};
 use opengl_rend::program::{GLLocation, Shader, ShaderType};
 use opengl_rend::vertex_attributes::{DataType, VertexAttribute};
 use opengl_rend::{
@@ -156,16 +156,16 @@ impl MatrixStack {
     fn pop(&mut self) {
         if let Some(new_matrix) = self.stack.pop() {
             self.current_matrix = new_matrix;
-        };
+        }
     }
     fn rotate_x(&mut self, angle: f32) {
-        self.current_matrix *= Mat4::from_rotation_x(angle);
+        self.current_matrix *= Mat4::from_rotation_x(angle.to_radians());
     }
     fn rotate_y(&mut self, angle: f32) {
-        self.current_matrix *= Mat4::from_rotation_y(angle);
+        self.current_matrix *= Mat4::from_rotation_y(angle.to_radians());
     }
     fn rotate_z(&mut self, angle: f32) {
-        self.current_matrix *= Mat4::from_rotation_z(angle);
+        self.current_matrix *= Mat4::from_rotation_z(angle.to_radians());
     }
     fn scale(&mut self, scale: Vec3) {
         self.current_matrix *= Mat4::from_scale(scale);
@@ -205,7 +205,42 @@ struct Hierarchy {
     lower_finger_ang: f32,
 }
 
+struct DrawCtx<'a> {
+    gl: &'a mut OpenGl,
+    program: &'a mut Program,
+    matrix_location: GLLocation,
+}
+
+impl<'a> DrawCtx<'a> {
+    fn new(gl: &'a mut OpenGl, program: &'a mut Program, matrix_location: GLLocation) -> Self {
+        Self {
+            gl,
+            program,
+            matrix_location,
+        }
+    }
+}
+#[derive(PartialEq, Clone, Copy)]
+struct Transform {
+    position: Vec3,
+    rotation: Vec3,
+    scale: Vec3,
+}
+
+impl Transform {
+    fn new(position: Vec3, rotation: Vec3, scale: Vec3) -> Self {
+        Self {
+            position,
+            rotation,
+            scale,
+        }
+    }
+}
+
 impl Hierarchy {
+    const STANDARD_ANGLE_INCREMENT: f32 = 11.25;
+    const SMALL_ANGLE_INCREMENT: f32 = 9.0;
+
     fn new() -> Self {
         Self {
             stack: MatrixStack::new(),
@@ -214,163 +249,209 @@ impl Hierarchy {
             base_scale_z: 3.0,
             base_left_pos: Vec3::new(2.0, 0.0, 0.0),
             base_right_pos: Vec3::new(-2.0, 0.0, 0.0),
-            upper_arm_ang: -33.75,
+            upper_arm_ang: -50.0,
             upper_arm_size: 9.0,
             lower_arm_pos: Vec3::new(0.0, 0.0, 8.0),
-            lower_arm_ang: 146.25,
+            lower_arm_ang: 60.0,
             lower_arm_len: 5.0,
             lower_arm_width: 1.5,
-            wrist_pos: Vec3::new(30.0, 0.0, 5.0),
+            wrist_pos: Vec3::new(0.0, 0.0, 5.0),
             wrist_roll_ang: 0.0,
-            wrist_pitch_ang: 67.5,
+            wrist_pitch_ang: 90.0,
             wrist_len: 2.0,
             wrist_width: 2.0,
             left_finger_pos: Vec3::new(1.0, 0.0, 1.0),
             right_finger_pos: Vec3::new(-1.0, 0.0, 1.0),
-            finger_open_ang: 180.0,
+            finger_open_ang: 70.0,
             finger_len: 2.0,
             finger_width: 0.5,
             lower_finger_ang: 45.0,
         }
     }
+
+    fn increment_base_ang(&mut self, positive: bool) {
+        if positive {
+            self.base_ang += Self::STANDARD_ANGLE_INCREMENT;
+        } else {
+            self.base_ang -= Self::STANDARD_ANGLE_INCREMENT;
+        }
+        self.base_ang %= 360.0;
+    }
+    fn increment_upper_arm_ang(&mut self, positive: bool) {
+        if positive {
+            self.upper_arm_ang += Self::STANDARD_ANGLE_INCREMENT;
+        } else {
+            self.upper_arm_ang -= Self::STANDARD_ANGLE_INCREMENT;
+        }
+        self.upper_arm_ang = self.upper_arm_ang.clamp(-90.0, 0.0);
+    }
+
+    fn set_transform(&mut self, transform: Transform) {
+        if transform.position != Vec3::ZERO {
+            self.stack.translate(transform.position);
+        }
+        if transform.rotation.z != 0.0 {
+            self.stack.rotate_z(transform.rotation.z);
+        }
+        if transform.rotation.x != 0.0 {
+            self.stack.rotate_x(transform.rotation.x);
+        }
+        if transform.rotation.y != 0.0 {
+            self.stack.rotate_y(transform.rotation.y);
+        }
+        if transform.scale != Vec3::ZERO {
+            self.stack.scale(transform.scale);
+        }
+    }
+
+    fn draw_cube(&mut self, ctx: &mut DrawCtx<'_>, transform: Transform) {
+        self.stack.push();
+        self.set_transform(transform);
+        ctx.program
+            .set_uniform(ctx.matrix_location, self.stack.top());
+        ctx.gl.draw_elements(
+            DrawMode::Triangles,
+            INDEX_DATA.len() as GLsizei,
+            IndexSize::UnsignedInt,
+            0,
+        );
+        self.stack.pop();
+    }
+
     fn draw(&mut self, gl: &mut OpenGl, program: &mut Program, matrix_location: GLLocation) {
-        self.stack.translate(self.base_pos);
-        self.stack.rotate_y(self.base_ang);
-        {
-            // left base
-            self.stack.push();
-            self.stack.translate(self.base_left_pos);
-            self.stack.scale(Vec3::new(1.0, 1.0, self.base_scale_z));
-            program.set_uniform(matrix_location, self.stack.top());
-            gl.draw_elements(
-                Triangles,
-                INDEX_DATA.len() as GLsizei,
-                IndexSize::UnsignedInt,
-                0,
-            );
-            self.stack.pop();
-        }
-        {
-            // right base
-            self.stack.push();
-            self.stack.translate(self.base_right_pos);
-            self.stack.scale(Vec3::new(1.0, 1.0, self.base_scale_z));
-            program.set_uniform(matrix_location, self.stack.top());
-            gl.draw_elements(
-                Triangles,
-                INDEX_DATA.len() as GLsizei,
-                IndexSize::UnsignedInt,
-                0,
-            );
-            self.stack.pop();
-        }
+        self.stack = MatrixStack::new();
+        let mut ctx = DrawCtx::new(gl, program, matrix_location);
+        let base = Transform::new(self.base_pos, Vec3::Y * self.base_ang, Vec3::ONE);
+        self.set_transform(base);
 
-        self.draw_upper_arm(program, gl, matrix_location);
+        let base_scale = Vec3::new(1.0, 1.0, self.base_scale_z);
+        let left_base = Transform::new(self.base_left_pos, Vec3::ZERO, base_scale);
+        self.draw_cube(&mut ctx, left_base);
+
+        let right_base = Transform::new(self.base_right_pos, Vec3::ZERO, base_scale);
+        self.draw_cube(&mut ctx, right_base);
+
+        self.draw_upper_arm(&mut ctx);
     }
-    fn draw_upper_arm(
-        &mut self,
-        program: &mut Program,
-        gl: &mut OpenGl,
-        matrix_location: GLLocation,
-    ) {
+    fn draw_upper_arm(&mut self, ctx: &mut DrawCtx<'_>) {
         self.stack.push();
 
-        self.stack.rotate_x(self.upper_arm_ang);
-        {
-            self.stack.push();
+        let upper_arm = Transform::new(Vec3::ZERO, Vec3::X * self.upper_arm_ang, Vec3::ONE);
+        self.set_transform(upper_arm);
 
-            self.stack
-                .translate(Vec3::Z * (self.upper_arm_size / 2.0 - 1.0));
-            self.stack
-                .scale(Vec3::new(1.0, 1.0, self.upper_arm_size / 2.0));
+        let upper_arm_pos = Vec3::Z * (self.upper_arm_size / 2.0 - 1.0);
+        let upper_arm_scale = Vec3::new(1.0, 1.0, self.upper_arm_size / 2.0);
 
-            program.set_uniform(matrix_location, self.stack.top());
-            gl.draw_elements(
-                Triangles,
-                INDEX_DATA.len() as GLsizei,
-                IndexSize::UnsignedInt,
-                0,
-            );
-            self.stack.pop();
-        }
-        self.draw_lower_arm(program, gl, matrix_location);
+        let upper_arm = Transform::new(upper_arm_pos, Vec3::ZERO, upper_arm_scale);
+        self.draw_cube(ctx, upper_arm);
+
+        self.draw_lower_arm(ctx);
         self.stack.pop();
     }
 
-    fn draw_lower_arm(
-        &mut self,
-        program: &mut Program,
-        gl: &mut OpenGl,
-        matrix_location: GLLocation,
-    ) {
+    fn draw_lower_arm(&mut self, ctx: &mut DrawCtx<'_>) {
         self.stack.push();
 
-        self.stack.translate(self.lower_arm_pos);
-        self.stack.rotate_x(self.lower_arm_ang);
-        {
-            self.stack.push();
+        let lower_arm = Transform::new(self.lower_arm_pos, Vec3::X * self.lower_arm_ang, Vec3::ONE);
 
-            self.stack.translate(Vec3::Z * (self.lower_arm_len / 2.0));
-            self.stack.scale(Vec3::new(
-                self.lower_arm_width / 2.0,
-                self.lower_arm_width / 2.0,
-                self.lower_arm_len / 2.0,
-            ));
+        self.set_transform(lower_arm);
 
-            program.set_uniform(matrix_location, self.stack.top());
-            gl.draw_elements(
-                Triangles,
-                INDEX_DATA.len() as GLsizei,
-                IndexSize::UnsignedInt,
-                0,
-            );
-            self.stack.pop();
-        }
-        self.draw_wrist(program, gl, matrix_location);
+        let lower_arm_pos = Vec3::Z * (self.lower_arm_len * 0.5);
+        let lower_arm_scale = Vec3::new(
+            self.lower_arm_width * 0.5,
+            self.lower_arm_width * 0.5,
+            self.lower_arm_len * 0.5,
+        );
+
+        let lower_arm = Transform::new(lower_arm_pos, Vec3::ZERO, lower_arm_scale);
+        self.draw_cube(ctx, lower_arm);
+
+        self.draw_wrist(ctx);
         self.stack.pop();
     }
 
-    fn draw_wrist(&mut self, program: &mut Program, gl: &mut OpenGl, matrix_location: GLLocation) {
+    fn draw_wrist(&mut self, ctx: &mut DrawCtx<'_>) {
         self.stack.push();
 
-        self.stack.translate(self.wrist_pos);
-        self.stack.rotate_z(self.wrist_roll_ang);
-        self.stack.rotate_x(self.wrist_pitch_ang);
+        let wrist = Transform::new(
+            self.wrist_pos,
+            Vec3::new(self.wrist_pitch_ang, 0.0, self.wrist_roll_ang),
+            Vec3::ONE,
+        );
 
-        {
-            self.stack.push();
+        self.set_transform(wrist);
+        let wrist_scale = Vec3::new(
+            self.wrist_width * 0.5,
+            self.wrist_width * 0.5,
+            self.wrist_len * 0.5,
+        );
+        let wrist = Transform::new(Vec3::ZERO, Vec3::ZERO, wrist_scale);
+        self.draw_cube(ctx, wrist);
 
-            self.stack.scale(Vec3::new(
-                self.wrist_width / 2.0,
-                self.wrist_width / 2.0,
-                self.wrist_len / 2.0,
-            ));
-
-            program.set_uniform(matrix_location, self.stack.top());
-            gl.draw_elements(
-                Triangles,
-                INDEX_DATA.len() as GLsizei,
-                IndexSize::UnsignedInt,
-                0,
-            );
-            self.stack.pop();
-        }
-        self.draw_fingers(program, gl, matrix_location);
+        self.draw_fingers(ctx);
         self.stack.pop();
     }
 
-    fn draw_fingers(
-        &mut self,
-        program: &mut Program,
-        gl: &mut OpenGl,
-        matrix_location: GLLocation,
-    ) {
+    fn draw_fingers(&mut self, ctx: &mut DrawCtx<'_>) {
         // draw left finger
         self.stack.push();
 
-        self.stack.translate(self.left_finger_pos);
-        self.stack.rotate_y(self.finger_open_ang);
+        let left_finger = Transform::new(
+            self.left_finger_pos,
+            Vec3::Y * self.finger_open_ang,
+            Vec3::ONE,
+        );
+        self.set_transform(left_finger);
+        let finger_pos = Vec3::Z * self.finger_len * 0.5;
+        let finger_scale = Vec3::new(
+            self.finger_width * 0.5,
+            self.finger_width * 0.5,
+            self.finger_len * 0.5,
+        );
+        let finger = Transform::new(finger_pos, Vec3::ZERO, finger_scale);
+        self.draw_cube(ctx, finger);
 
+        {
+            let lower_finger = Transform::new(
+                Vec3::Z * self.finger_len,
+                Vec3::Y * -self.lower_finger_ang,
+                Vec3::ONE,
+            );
+            self.stack.push();
+
+            self.set_transform(lower_finger);
+
+            self.draw_cube(ctx, finger);
+
+            self.stack.pop();
+        }
+        self.stack.pop();
+
+        // draw right finger
+        self.stack.push();
+
+        let right_finger = Transform::new(
+            self.right_finger_pos,
+            Vec3::Y * -self.finger_open_ang,
+            Vec3::ONE,
+        );
+        self.set_transform(right_finger);
+
+        self.draw_cube(ctx, finger);
+
+        {
+            self.stack.push();
+            let lower_finger = Transform::new(
+                Vec3::Z * self.finger_len,
+                Vec3::Y * self.lower_finger_ang,
+                Vec3::ONE,
+            );
+            self.set_transform(lower_finger);
+
+            self.draw_cube(ctx, finger);
+
+            self.stack.pop();
+        }
         self.stack.pop();
     }
 }
@@ -396,16 +477,16 @@ impl Application for App {
         index_buffer.bind();
         index_buffer.buffer_data(&INDEX_DATA, Usage::StaticDraw);
         // initialize vaos
-        let mut vertex_buffer_object = VertexArrayObject::new();
-        vertex_buffer_object.bind();
+        let mut vertex_array_object = VertexArrayObject::new();
+        vertex_array_object.bind();
         let vec3 = VertexAttribute::new(3, DataType::Float, false);
         let vec4 = VertexAttribute::new(4, DataType::Float, false);
 
         let color_data_offset = std::mem::size_of::<f32>() * 3 * NUMBER_OF_VERTICES;
 
         vertex_buffer.bind();
-        vertex_buffer_object.set_attribute(0, &vec3, 0, 0);
-        vertex_buffer_object.set_attribute(1, &vec4, 0, color_data_offset as GLsizei);
+        vertex_array_object.set_attribute(0, &vec3, 0, 0);
+        vertex_array_object.set_attribute(1, &vec4, 0, color_data_offset as GLsizei);
         index_buffer.bind();
 
         // enable backface culling
@@ -427,7 +508,7 @@ impl Application for App {
 
         let frustum_scale = calculate_frustum_scale(45.0);
         let z_near = 1.0;
-        let z_far = 45.0;
+        let z_far = 100.0;
 
         let mut matrix: [f32; 16] = [0.0; 16];
         matrix[0] = frustum_scale;
@@ -443,7 +524,7 @@ impl Application for App {
         Self {
             gl,
             program,
-            vertex_array_object: vertex_buffer_object,
+            vertex_array_object,
             _vertex_buffer: vertex_buffer,
             _index_buffer: index_buffer,
             window,
@@ -461,7 +542,6 @@ impl Application for App {
         self.gl.clear(ClearFlags::Color | ClearFlags::Depth);
         self.program.set_used();
         self.vertex_array_object.bind();
-
         self.hierarchy.draw(
             &mut self.gl,
             &mut self.program,
