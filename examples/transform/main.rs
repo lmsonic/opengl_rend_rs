@@ -7,6 +7,8 @@ use glam::{Mat4, Vec3};
 use glfw::{Action, Key, Modifiers, PWindow};
 use opengl_rend::app::{run_app, Application};
 use opengl_rend::buffer::{BufferType, Usage};
+use opengl_rend::node;
+use opengl_rend::nodetree::{Node, Visitor};
 use opengl_rend::opengl::{
     Capability, ClearFlags, CullMode, DepthFunc, DrawMode, FrontFace, IndexSize, PolygonMode,
 };
@@ -136,10 +138,6 @@ fn calculate_frustum_scale(fov_degrees: f32) -> f32 {
     (fov_radians * 0.5).tan().recip()
 }
 
-struct RenderNode {
-    transform: Transform,
-}
-
 struct MatrixStack {
     current_matrix: Mat4,
     stack: Vec<Mat4>,
@@ -242,7 +240,7 @@ struct Hierarchy {
     finger_len: f32,
     finger_width: f32,
     lower_finger_ang: f32,
-    tree: Tree<Transform>,
+    tree_root: Node<Transform>,
 }
 
 impl Hierarchy {
@@ -250,28 +248,21 @@ impl Hierarchy {
     const SMALL_ANGLE_INCREMENT: f32 = 9.0;
 
     fn render(&mut self, ctx: &mut DrawCtx<'_>) {
-        self.tree.traverse(
-            |idx, data, ctx| {
-                dbg!(idx);
-                dbg!(data);
-                // Before processing children
-            },
-            |idx, data, ctx| {
-                dbg!(idx);
-                dbg!(data);
-                // After processing all children
-            },
-            ctx,
-        );
+        self.tree_root.visit(&mut |index, transform| {
+            // PORCO DIO
+            if index % 2 == 0 {
+                self.set_transform(transform);
+            } else {
+                self.draw_cube(ctx, transform);
+            }
+        });
     }
 
     fn new() -> Self {
-        let mut tree = Tree::new();
         // Base
         let base_pos = Vec3::new(3.0, -5.0, -40.0);
         let base_ang = -45.0;
         let base = Transform::new(base_pos, Vec3::Y * base_ang, Vec3::ONE);
-        let base_index = tree.add_child_to_root(base);
 
         let base_scale_z = 3.0;
         let base_scale = Vec3::new(1.0, 1.0, base_scale_z);
@@ -279,26 +270,21 @@ impl Hierarchy {
         let base_right_pos = Vec3::new(-2.0, 0.0, 0.0);
         let left_base = Transform::new(base_left_pos, Vec3::ZERO, base_scale);
         let right_base = Transform::new(base_right_pos, Vec3::ZERO, base_scale);
-        tree.add_child(base_index, left_base);
-        tree.add_child(base_index, right_base);
 
         // Upper arm
         let upper_arm_ang = -50.0;
-        let upper_arm = Transform::new(Vec3::ZERO, Vec3::X * upper_arm_ang, Vec3::ONE);
+        let upper_arm_base = Transform::new(Vec3::ZERO, Vec3::X * upper_arm_ang, Vec3::ONE);
 
-        let upper_arm_index = tree.add_child(base_index, upper_arm);
         let upper_arm_size = 9.0;
         let upper_arm_pos = Vec3::Z * (upper_arm_size / 2.0 - 1.0);
         let upper_arm_scale = Vec3::new(1.0, 1.0, upper_arm_size / 2.0);
 
         let upper_arm = Transform::new(upper_arm_pos, Vec3::ZERO, upper_arm_scale);
-        let upper_arm_index = tree.add_child(upper_arm_index, upper_arm);
         // Lower arm
 
         let lower_arm_pos = Vec3::new(0.0, 0.0, 8.0);
         let lower_arm_ang = 60.0;
-        let lower_arm = Transform::new(lower_arm_pos, Vec3::X * lower_arm_ang, Vec3::ONE);
-        let lower_arm_index = tree.add_child(upper_arm_index, lower_arm);
+        let lower_arm_base = Transform::new(lower_arm_pos, Vec3::X * lower_arm_ang, Vec3::ONE);
 
         let lower_arm_len = 5.0;
         let lower_arm_width = 1.5;
@@ -309,51 +295,47 @@ impl Hierarchy {
             lower_arm_len * 0.5,
         );
         let lower_arm = Transform::new(lower_arm_pos, Vec3::ZERO, lower_arm_scale);
-        let lower_arm_index = tree.add_child(lower_arm_index, lower_arm);
 
         // Wrist
         let wrist_pos = Vec3::new(0.0, 0.0, 5.0);
         let wrist_roll_ang = 0.0;
         let wrist_pitch_ang = 90.0;
-        let wrist = Transform::new(
+        let wrist_base = Transform::new(
             wrist_pos,
             Vec3::new(wrist_pitch_ang, 0.0, wrist_roll_ang),
             Vec3::ONE,
         );
-        let wrist_index = tree.add_child(lower_arm_index, wrist);
         let wrist_len = 2.0;
         let wrist_width = 2.0;
         let wrist_scale = Vec3::new(wrist_width * 0.5, wrist_width * 0.5, wrist_len * 0.5);
         let wrist = Transform::new(Vec3::ZERO, Vec3::ZERO, wrist_scale);
-        let wrist_index = tree.add_child(wrist_index, wrist);
 
         // Fingers
         let left_finger_pos = Vec3::new(1.0, 0.0, 1.0);
         let finger_open_ang = 70.0;
         let left_finger = Transform::new(left_finger_pos, Vec3::Y * finger_open_ang, Vec3::ONE);
 
-        let left_finger_index = tree.add_child(wrist_index, left_finger);
-
         let finger_len = 2.0;
         let finger_width = 0.5;
         let finger_pos = Vec3::Z * finger_len * 0.5;
         let finger_scale = Vec3::new(finger_width * 0.5, finger_width * 0.5, finger_len * 0.5);
         let finger = Transform::new(finger_pos, Vec3::ZERO, finger_scale);
-        let left_finger_index = tree.add_child(left_finger_index, finger);
-
         let lower_finger_ang = 45.0;
-        let lower_finger =
+        let lower_finger_left =
             Transform::new(Vec3::Z * finger_len, Vec3::Y * -lower_finger_ang, Vec3::ONE);
-        tree.add_child(left_finger_index, lower_finger);
 
         let right_finger_pos = Vec3::new(-1.0, 0.0, 1.0);
         let right_finger = Transform::new(right_finger_pos, Vec3::Y * -finger_open_ang, Vec3::ONE);
-        let right_finger_index = tree.add_child(wrist_index, right_finger);
-        let right_finger_index = tree.add_child(right_finger_index, finger);
-
-        let lower_finger =
+        let lower_finger_right =
             Transform::new(Vec3::Z * finger_len, Vec3::Y * lower_finger_ang, Vec3::ONE);
-        tree.add_child(right_finger_index, lower_finger);
+
+        let left_finger = node!(left_finger).leaf(finger).leaf(lower_finger_left);
+        let right_finger = node!(right_finger).leaf(finger).leaf(lower_finger_right);
+
+        let wrist = node!(wrist_base).node(node!(wrist).nodes([left_finger, right_finger]));
+        let lower_arm = node!(lower_arm_base).node(node!(lower_arm).node(wrist));
+        let upper_arm = node!(upper_arm_base).node(node!(upper_arm).node(lower_arm));
+        let tree_root = node!(base).leaves([left_base, right_base]).node(upper_arm);
 
         Self {
             stack: MatrixStack::new(),
@@ -379,7 +361,7 @@ impl Hierarchy {
             finger_len: 2.0,
             finger_width: 0.5,
             lower_finger_ang: 45.0,
-            tree,
+            tree_root,
         }
     }
 
