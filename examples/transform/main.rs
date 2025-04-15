@@ -1,13 +1,14 @@
 #![forbid(unsafe_code)]
 use std::ffi::CString;
 
+use atree::iter::TraversalOrder;
+use atree::{Arena, Token};
 use gl::types::GLsizei;
 use glam::{Mat4, Vec3};
 use glfw::{Action, Key, Modifiers, PWindow};
 use opengl_rend::app::{run_app, Application};
 use opengl_rend::buffer::{BufferType, Usage};
-use opengl_rend::node;
-use opengl_rend::nodetree::Node;
+
 use opengl_rend::opengl::{
     Capability, ClearFlags, CullMode, DepthFunc, DrawMode, FrontFace, IndexSize,
 };
@@ -29,7 +30,8 @@ struct App {
     perspective_matrix: [f32; 16],
     _depth_clamping: bool,
     hierarchy: Hierarchy,
-    node_tree: Node<Transform>,
+    arena: Arena<Transform>,
+    root_token: Token,
 }
 
 const GREEN_COLOR: [f32; 4] = [0.75, 0.75, 1.0, 1.0];
@@ -211,11 +213,12 @@ impl Transform {
     }
 }
 
-fn build_node_tree() -> Node<Transform> {
+fn build_node_tree() -> (Arena<Transform>, Token) {
     // Base
     let base_pos = Vec3::new(3.0, -5.0, -0.0);
     let base_ang = -45.0;
     let base = Transform::new(base_pos, Vec3::Y * base_ang, Vec3::ONE);
+    let (mut arena, base_token) = Arena::with_data(base);
 
     let base_scale_z = 3.0;
     let base_scale = Vec3::new(1.0, 1.0, base_scale_z);
@@ -224,7 +227,8 @@ fn build_node_tree() -> Node<Transform> {
     let left_base = Transform::new(base_left_pos, Vec3::ZERO, base_scale);
     let right_base = Transform::new(base_right_pos, Vec3::ZERO, base_scale);
 
-    let mut base = node!(base).leaves([left_base, right_base]);
+    base_token.append(&mut arena, left_base);
+    base_token.append(&mut arena, right_base);
 
     // Upper arm
     let upper_arm_ang = -50.0;
@@ -235,7 +239,11 @@ fn build_node_tree() -> Node<Transform> {
     let upper_arm_scale = Vec3::new(1.0, 1.0, upper_arm_size / 2.0);
 
     let upper_arm = Transform::new(upper_arm_pos, Vec3::ZERO, upper_arm_scale);
-    let mut upper_arm = node!(upper_arm_base).node(node!(upper_arm));
+    // let mut upper_arm = node!(upper_arm_base).node(node!(upper_arm));
+
+    let upper_arm_token = base_token
+        .append(&mut arena, upper_arm_base)
+        .append(&mut arena, upper_arm);
 
     // Lower arm
     let lower_arm_pos = Vec3::new(0.0, 0.0, 8.0);
@@ -251,7 +259,11 @@ fn build_node_tree() -> Node<Transform> {
         lower_arm_len * 0.5,
     );
     let lower_arm = Transform::new(lower_arm_pos, Vec3::ZERO, lower_arm_scale);
-    let mut lower_arm = node!(lower_arm_base).node(node!(lower_arm));
+    // let mut lower_arm = node!(lower_arm_base).node(node!(lower_arm));
+
+    let lower_arm_token = upper_arm_token
+        .append(&mut arena, lower_arm_base)
+        .append(&mut arena, lower_arm);
 
     // Wrist
     let wrist_pos = Vec3::new(3.0, -5.0, -40.0);
@@ -266,7 +278,11 @@ fn build_node_tree() -> Node<Transform> {
     let wrist_width = 2.0;
     let wrist_scale = Vec3::new(wrist_width * 0.5, wrist_width * 0.5, wrist_len * 0.5);
     let wrist = Transform::new(Vec3::ZERO, Vec3::ZERO, wrist_scale);
-    let mut wrist = node!(wrist_base).node(node!(wrist));
+    // let mut wrist = node!(wrist_base).node(node!(wrist));
+
+    let wrist_token = lower_arm_token
+        .append(&mut arena, wrist_base)
+        .append(&mut arena, wrist);
 
     // Fingers
     let left_finger_pos = Vec3::new(1.0, 0.0, 1.0);
@@ -282,27 +298,25 @@ fn build_node_tree() -> Node<Transform> {
     let lower_finger_left =
         Transform::new(Vec3::Z * finger_len, Vec3::Y * -lower_finger_ang, Vec3::ONE);
 
+    wrist_token
+        .append(&mut arena, left_finger)
+        .append(&mut arena, finger)
+        .append(&mut arena, lower_finger_left);
+
     let right_finger_pos = Vec3::new(-1.0, 0.0, 1.0);
     let right_finger = Transform::new(right_finger_pos, Vec3::Y * -finger_open_ang, Vec3::ONE);
     let lower_finger_right =
         Transform::new(Vec3::Z * finger_len, Vec3::Y * lower_finger_ang, Vec3::ONE);
 
-    let left_finger = node!(left_finger).leaf(finger).leaf(lower_finger_left);
-    dbg!(&left_finger);
-    let right_finger = node!(right_finger).leaf(finger).leaf(lower_finger_right);
-    dbg!(&right_finger);
-
-    wrist.add_nodes([left_finger, right_finger]);
-    lower_arm.add_node(wrist);
-    upper_arm.add_node(lower_arm);
-    base.add_node(upper_arm);
-    dbg!(&base);
-    base
+    wrist_token
+        .append(&mut arena, right_finger)
+        .append(&mut arena, finger)
+        .append(&mut arena, lower_finger_right);
+    (arena, base_token)
 }
 
 struct Hierarchy {
     stack: MatrixStack,
-
     base_ang: f32,
     upper_arm_ang: f32,
     lower_arm_ang: f32,
@@ -315,17 +329,20 @@ impl Hierarchy {
     const STANDARD_ANGLE_INCREMENT: f32 = 11.25;
     const SMALL_ANGLE_INCREMENT: f32 = 9.0;
 
-    fn render(&mut self, ctx: &mut DrawCtx<'_>, tree_root: &mut Node<Transform>) {
+    fn render(&mut self, ctx: &mut DrawCtx<'_>, arena: &Arena<Transform>, root_token: Token) {
         self.stack = MatrixStack::new();
-        tree_root.visit(&mut |depth, transform| {
-            if depth % 2 == 0 {
-                // this is just how the code is in the original tutorial
-                self.stack.push();
-                self.set_transform(transform);
-            } else {
-                self.draw_cube(ctx, transform);
+        if let Some(root) = arena.get(root_token) {
+            for node in root.subtree(arena, TraversalOrder::Pre) {
+                // let depth = node.ancestors(arena).count();
+                // if depth % 2 == 0 {
+                //     self.stack.push();
+                //     self.set_transform(node.data);
+                // } else {
+                // i tried real hard but i have to move on, this code is shit
+                self.draw_cube(ctx, node.data);
+                // }
             }
-        });
+        }
     }
 
     fn new() -> Self {
@@ -460,7 +477,7 @@ impl Application for App {
         gl.cull_face(CullMode::Back);
         gl.front_face(FrontFace::CW);
 
-        use opengl_rend::opengl::PolygonMode;
+        // use opengl_rend::opengl::PolygonMode;
         // gl.polygon_mode(PolygonMode::Line);
 
         // enable depth test
@@ -489,6 +506,8 @@ impl Application for App {
         program.set_uniform(camera_to_clip_location, matrix);
         program.set_unused();
 
+        let (arena, root_token) = build_node_tree();
+
         Self {
             gl,
             program,
@@ -501,7 +520,8 @@ impl Application for App {
             _depth_clamping: false,
             model_to_camera_matrix_location,
             hierarchy: Hierarchy::new(),
-            node_tree: build_node_tree(),
+            arena,
+            root_token,
         }
     }
 
@@ -516,7 +536,8 @@ impl Application for App {
             &mut self.program,
             self.model_to_camera_matrix_location,
         );
-        self.hierarchy.render(&mut draw_ctx, &mut self.node_tree);
+        self.hierarchy
+            .render(&mut draw_ctx, &self.arena, self.root_token);
 
         self.vertex_array_object.unbind();
         self.program.set_unused();
