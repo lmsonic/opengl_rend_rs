@@ -1,6 +1,7 @@
 pub mod app;
 pub mod buffer;
 pub mod matrix_stack;
+pub mod mesh;
 pub mod opengl;
 pub mod program;
 pub mod uniforms;
