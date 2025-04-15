@@ -1,9 +1,7 @@
-use std::{cell::RefCell, rc::Rc};
-
+#[derive(Debug)]
 pub struct Node<T: Clone + Copy> {
-    children: Vec<Rc<RefCell<Node<T>>>>,
+    children: Vec<Node<T>>,
     value: T,
-    index: usize,
 }
 
 #[macro_export]
@@ -18,78 +16,62 @@ impl<T: Clone + Copy> Node<T> {
         Self {
             children: vec![],
             value,
-            index: 0,
         }
     }
 
     pub fn leaf(mut self, child: T) -> Self {
-        self.children.push(Rc::new(RefCell::new(Node::new(child))));
+        self.children.push(Node::new(child));
         self
     }
     pub fn leaves<const N: usize>(mut self, children: [T; N]) -> Self {
         self.children.append(
             &mut children
                 .into_iter()
-                .map(|node| Rc::new(RefCell::new(Node::new(node))))
+                .map(|node| Node::new(node))
                 .collect::<Vec<_>>(),
         );
         self
     }
 
     pub fn node(mut self, child: Node<T>) -> Self {
-        self.children.push(Rc::new(RefCell::new(child)));
+        self.children.push(child);
         self
     }
 
     pub fn nodes<const N: usize>(mut self, children: [Node<T>; N]) -> Self {
-        self.children.append(
-            &mut children
-                .into_iter()
-                .map(|node| Rc::new(RefCell::new(node)))
-                .collect::<Vec<_>>(),
-        );
+        self.children
+            .append(&mut children.into_iter().collect::<Vec<_>>());
         self
     }
 
     pub fn add_leaf<const N: usize>(&mut self, child: T) {
-        self.children.push(Rc::new(RefCell::new(Node::new(child))));
+        self.children.push(Node::new(child));
     }
     pub fn add_leaves<const N: usize>(&mut self, children: [T; N]) {
         self.children.append(
             &mut children
                 .into_iter()
-                .map(|node| Rc::new(RefCell::new(Node::new(node))))
+                .map(|node| Node::new(node))
                 .collect::<Vec<_>>(),
         );
     }
 
     pub fn add_node(&mut self, child: Node<T>) {
-        self.children.push(Rc::new(RefCell::new(child)));
+        self.children.push(child);
     }
 
     pub fn add_nodes<const N: usize>(&mut self, children: [Node<T>; N]) {
-        self.children.append(
-            &mut children
-                .into_iter()
-                .map(|node| Rc::new(RefCell::new(node)))
-                .collect::<Vec<_>>(),
-        );
-    }
-
-    pub fn rebuild_indices(&mut self) {
-        let depth = 0;
-        for child in &self.children {
-            todo!()
-        }
+        self.children
+            .append(&mut children.into_iter().collect::<Vec<_>>());
     }
 
     pub fn visit(&self, f: &mut impl FnMut(usize, T)) {
         for child in &self.children {
-            let value = child.borrow().value;
-            let index = child.borrow().index;
-            f(index, value);
+            let value = child.value;
+            let depth = 5;
+            f(depth, value);
             // DFS
-            child.borrow_mut().visit(f);
+            child.visit(f);
         }
     }
 }
@@ -194,7 +176,7 @@ mod tests {
         let wrist = Node::new(wrist_base).node(Node::new(wrist).node(fingers));
         let lower_arm = Node::new(lower_arm_base).node(Node::new(lower_arm).node(wrist));
         let upper_arm = Node::new(upper_arm_base).node(Node::new(upper_arm).node(lower_arm));
-        let root = Node::new(base)
+        let _root = Node::new(base)
             .leaves([left_base, right_base])
             .node(upper_arm);
     }

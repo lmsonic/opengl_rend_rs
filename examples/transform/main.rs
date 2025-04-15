@@ -1,16 +1,15 @@
 #![forbid(unsafe_code)]
 use std::ffi::CString;
 
-use easy_tree::Tree;
 use gl::types::GLsizei;
 use glam::{Mat4, Vec3};
 use glfw::{Action, Key, Modifiers, PWindow};
 use opengl_rend::app::{run_app, Application};
 use opengl_rend::buffer::{BufferType, Usage};
 use opengl_rend::node;
-use opengl_rend::nodetree::{Node, Visitor};
+use opengl_rend::nodetree::Node;
 use opengl_rend::opengl::{
-    Capability, ClearFlags, CullMode, DepthFunc, DrawMode, FrontFace, IndexSize, PolygonMode,
+    Capability, ClearFlags, CullMode, DepthFunc, DrawMode, FrontFace, IndexSize,
 };
 use opengl_rend::program::{GLLocation, Shader, ShaderType};
 use opengl_rend::vertex_attributes::{DataType, VertexAttribute};
@@ -30,6 +29,7 @@ struct App {
     perspective_matrix: [f32; 16],
     _depth_clamping: bool,
     hierarchy: Hierarchy,
+    node_tree: Node<Transform>,
 }
 
 const GREEN_COLOR: [f32; 4] = [0.75, 0.75, 1.0, 1.0];
@@ -202,7 +202,6 @@ struct Transform {
 }
 
 impl Transform {
-    const IDENTITY: Self = Transform::new(Vec3::ZERO, Vec3::ZERO, Vec3::ONE);
     const fn new(position: Vec3, rotation: Vec3, scale: Vec3) -> Self {
         Self {
             position,
@@ -212,45 +211,116 @@ impl Transform {
     }
 }
 
+fn build_node_tree() -> Node<Transform> {
+    // Base
+    let base_pos = Vec3::new(3.0, -5.0, -0.0);
+    let base_ang = -45.0;
+    let base = Transform::new(base_pos, Vec3::Y * base_ang, Vec3::ONE);
+
+    let base_scale_z = 3.0;
+    let base_scale = Vec3::new(1.0, 1.0, base_scale_z);
+    let base_left_pos = Vec3::new(2.0, 0.0, 0.0);
+    let base_right_pos = Vec3::new(-2.0, 0.0, 0.0);
+    let left_base = Transform::new(base_left_pos, Vec3::ZERO, base_scale);
+    let right_base = Transform::new(base_right_pos, Vec3::ZERO, base_scale);
+
+    let mut base = node!(base).leaves([left_base, right_base]);
+
+    // Upper arm
+    let upper_arm_ang = -50.0;
+    let upper_arm_base = Transform::new(Vec3::ZERO, Vec3::X * upper_arm_ang, Vec3::ONE);
+
+    let upper_arm_size = 9.0;
+    let upper_arm_pos = Vec3::Z * (upper_arm_size / 2.0 - 1.0);
+    let upper_arm_scale = Vec3::new(1.0, 1.0, upper_arm_size / 2.0);
+
+    let upper_arm = Transform::new(upper_arm_pos, Vec3::ZERO, upper_arm_scale);
+    let mut upper_arm = node!(upper_arm_base).node(node!(upper_arm));
+
+    // Lower arm
+    let lower_arm_pos = Vec3::new(0.0, 0.0, 8.0);
+    let lower_arm_ang = 60.0;
+    let lower_arm_base = Transform::new(lower_arm_pos, Vec3::X * lower_arm_ang, Vec3::ONE);
+
+    let lower_arm_len = 5.0;
+    let lower_arm_width = 1.5;
+    let lower_arm_pos = Vec3::Z * (lower_arm_len * 0.5);
+    let lower_arm_scale = Vec3::new(
+        lower_arm_width * 0.5,
+        lower_arm_width * 0.5,
+        lower_arm_len * 0.5,
+    );
+    let lower_arm = Transform::new(lower_arm_pos, Vec3::ZERO, lower_arm_scale);
+    let mut lower_arm = node!(lower_arm_base).node(node!(lower_arm));
+
+    // Wrist
+    let wrist_pos = Vec3::new(3.0, -5.0, -40.0);
+    let wrist_roll_ang = 0.0;
+    let wrist_pitch_ang = 90.0;
+    let wrist_base = Transform::new(
+        wrist_pos,
+        Vec3::new(wrist_pitch_ang, 0.0, wrist_roll_ang),
+        Vec3::ONE,
+    );
+    let wrist_len = 2.0;
+    let wrist_width = 2.0;
+    let wrist_scale = Vec3::new(wrist_width * 0.5, wrist_width * 0.5, wrist_len * 0.5);
+    let wrist = Transform::new(Vec3::ZERO, Vec3::ZERO, wrist_scale);
+    let mut wrist = node!(wrist_base).node(node!(wrist));
+
+    // Fingers
+    let left_finger_pos = Vec3::new(1.0, 0.0, 1.0);
+    let finger_open_ang = 70.0;
+    let left_finger = Transform::new(left_finger_pos, Vec3::Y * finger_open_ang, Vec3::ONE);
+
+    let finger_len = 2.0;
+    let finger_width = 0.5;
+    let finger_pos = Vec3::Z * finger_len * 0.5;
+    let finger_scale = Vec3::new(finger_width * 0.5, finger_width * 0.5, finger_len * 0.5);
+    let finger = Transform::new(finger_pos, Vec3::ZERO, finger_scale);
+    let lower_finger_ang = 45.0;
+    let lower_finger_left =
+        Transform::new(Vec3::Z * finger_len, Vec3::Y * -lower_finger_ang, Vec3::ONE);
+
+    let right_finger_pos = Vec3::new(-1.0, 0.0, 1.0);
+    let right_finger = Transform::new(right_finger_pos, Vec3::Y * -finger_open_ang, Vec3::ONE);
+    let lower_finger_right =
+        Transform::new(Vec3::Z * finger_len, Vec3::Y * lower_finger_ang, Vec3::ONE);
+
+    let left_finger = node!(left_finger).leaf(finger).leaf(lower_finger_left);
+    dbg!(&left_finger);
+    let right_finger = node!(right_finger).leaf(finger).leaf(lower_finger_right);
+    dbg!(&right_finger);
+
+    wrist.add_nodes([left_finger, right_finger]);
+    lower_arm.add_node(wrist);
+    upper_arm.add_node(lower_arm);
+    base.add_node(upper_arm);
+    dbg!(&base);
+    base
+}
+
 struct Hierarchy {
     stack: MatrixStack,
-    base_pos: Vec3,
+
     base_ang: f32,
-    base_scale_z: f32,
-
-    base_left_pos: Vec3,
-    base_right_pos: Vec3,
-
     upper_arm_ang: f32,
-    upper_arm_size: f32,
-    lower_arm_pos: Vec3,
     lower_arm_ang: f32,
-    lower_arm_len: f32,
-    lower_arm_width: f32,
-
-    wrist_pos: Vec3,
     wrist_roll_ang: f32,
     wrist_pitch_ang: f32,
-    wrist_len: f32,
-    wrist_width: f32,
-
-    left_finger_pos: Vec3,
-    right_finger_pos: Vec3,
     finger_open_ang: f32,
-    finger_len: f32,
-    finger_width: f32,
-    lower_finger_ang: f32,
-    tree_root: Node<Transform>,
 }
 
 impl Hierarchy {
     const STANDARD_ANGLE_INCREMENT: f32 = 11.25;
     const SMALL_ANGLE_INCREMENT: f32 = 9.0;
 
-    fn render(&mut self, ctx: &mut DrawCtx<'_>) {
-        self.tree_root.visit(&mut |index, transform| {
-            // PORCO DIO
-            if index % 2 == 0 {
+    fn render(&mut self, ctx: &mut DrawCtx<'_>, tree_root: &mut Node<Transform>) {
+        self.stack = MatrixStack::new();
+        tree_root.visit(&mut |depth, transform| {
+            if depth % 2 == 0 {
+                // this is just how the code is in the original tutorial
+                self.stack.push();
                 self.set_transform(transform);
             } else {
                 self.draw_cube(ctx, transform);
@@ -259,109 +329,14 @@ impl Hierarchy {
     }
 
     fn new() -> Self {
-        // Base
-        let base_pos = Vec3::new(3.0, -5.0, -40.0);
-        let base_ang = -45.0;
-        let base = Transform::new(base_pos, Vec3::Y * base_ang, Vec3::ONE);
-
-        let base_scale_z = 3.0;
-        let base_scale = Vec3::new(1.0, 1.0, base_scale_z);
-        let base_left_pos = Vec3::new(2.0, 0.0, 0.0);
-        let base_right_pos = Vec3::new(-2.0, 0.0, 0.0);
-        let left_base = Transform::new(base_left_pos, Vec3::ZERO, base_scale);
-        let right_base = Transform::new(base_right_pos, Vec3::ZERO, base_scale);
-
-        // Upper arm
-        let upper_arm_ang = -50.0;
-        let upper_arm_base = Transform::new(Vec3::ZERO, Vec3::X * upper_arm_ang, Vec3::ONE);
-
-        let upper_arm_size = 9.0;
-        let upper_arm_pos = Vec3::Z * (upper_arm_size / 2.0 - 1.0);
-        let upper_arm_scale = Vec3::new(1.0, 1.0, upper_arm_size / 2.0);
-
-        let upper_arm = Transform::new(upper_arm_pos, Vec3::ZERO, upper_arm_scale);
-        // Lower arm
-
-        let lower_arm_pos = Vec3::new(0.0, 0.0, 8.0);
-        let lower_arm_ang = 60.0;
-        let lower_arm_base = Transform::new(lower_arm_pos, Vec3::X * lower_arm_ang, Vec3::ONE);
-
-        let lower_arm_len = 5.0;
-        let lower_arm_width = 1.5;
-        let lower_arm_pos = Vec3::Z * (lower_arm_len * 0.5);
-        let lower_arm_scale = Vec3::new(
-            lower_arm_width * 0.5,
-            lower_arm_width * 0.5,
-            lower_arm_len * 0.5,
-        );
-        let lower_arm = Transform::new(lower_arm_pos, Vec3::ZERO, lower_arm_scale);
-
-        // Wrist
-        let wrist_pos = Vec3::new(0.0, 0.0, 5.0);
-        let wrist_roll_ang = 0.0;
-        let wrist_pitch_ang = 90.0;
-        let wrist_base = Transform::new(
-            wrist_pos,
-            Vec3::new(wrist_pitch_ang, 0.0, wrist_roll_ang),
-            Vec3::ONE,
-        );
-        let wrist_len = 2.0;
-        let wrist_width = 2.0;
-        let wrist_scale = Vec3::new(wrist_width * 0.5, wrist_width * 0.5, wrist_len * 0.5);
-        let wrist = Transform::new(Vec3::ZERO, Vec3::ZERO, wrist_scale);
-
-        // Fingers
-        let left_finger_pos = Vec3::new(1.0, 0.0, 1.0);
-        let finger_open_ang = 70.0;
-        let left_finger = Transform::new(left_finger_pos, Vec3::Y * finger_open_ang, Vec3::ONE);
-
-        let finger_len = 2.0;
-        let finger_width = 0.5;
-        let finger_pos = Vec3::Z * finger_len * 0.5;
-        let finger_scale = Vec3::new(finger_width * 0.5, finger_width * 0.5, finger_len * 0.5);
-        let finger = Transform::new(finger_pos, Vec3::ZERO, finger_scale);
-        let lower_finger_ang = 45.0;
-        let lower_finger_left =
-            Transform::new(Vec3::Z * finger_len, Vec3::Y * -lower_finger_ang, Vec3::ONE);
-
-        let right_finger_pos = Vec3::new(-1.0, 0.0, 1.0);
-        let right_finger = Transform::new(right_finger_pos, Vec3::Y * -finger_open_ang, Vec3::ONE);
-        let lower_finger_right =
-            Transform::new(Vec3::Z * finger_len, Vec3::Y * lower_finger_ang, Vec3::ONE);
-
-        let left_finger = node!(left_finger).leaf(finger).leaf(lower_finger_left);
-        let right_finger = node!(right_finger).leaf(finger).leaf(lower_finger_right);
-
-        let wrist = node!(wrist_base).node(node!(wrist).nodes([left_finger, right_finger]));
-        let lower_arm = node!(lower_arm_base).node(node!(lower_arm).node(wrist));
-        let upper_arm = node!(upper_arm_base).node(node!(upper_arm).node(lower_arm));
-        let tree_root = node!(base).leaves([left_base, right_base]).node(upper_arm);
-
         Self {
             stack: MatrixStack::new(),
-            base_pos: Vec3::new(3.0, -5.0, -40.0),
             base_ang: -45.0,
-            base_scale_z: 3.0,
-            base_left_pos: Vec3::new(2.0, 0.0, 0.0),
-            base_right_pos: Vec3::new(-2.0, 0.0, 0.0),
             upper_arm_ang: -50.0,
-            upper_arm_size: 9.0,
-            lower_arm_pos: Vec3::new(0.0, 0.0, 8.0),
             lower_arm_ang: 60.0,
-            lower_arm_len: 5.0,
-            lower_arm_width: 1.5,
-            wrist_pos: Vec3::new(0.0, 0.0, 5.0),
             wrist_roll_ang: 0.0,
             wrist_pitch_ang: 90.0,
-            wrist_len: 2.0,
-            wrist_width: 2.0,
-            left_finger_pos: Vec3::new(1.0, 0.0, 1.0),
-            right_finger_pos: Vec3::new(-1.0, 0.0, 1.0),
             finger_open_ang: 70.0,
-            finger_len: 2.0,
-            finger_width: 0.5,
-            lower_finger_ang: 45.0,
-            tree_root,
         }
     }
 
@@ -414,15 +389,6 @@ impl Hierarchy {
         self.finger_open_ang = self.finger_open_ang.clamp(9.0, 180.0);
     }
 
-    fn write_angle(&self) {
-        dbg!(self.base_ang);
-        dbg!(self.upper_arm_ang);
-        dbg!(self.lower_arm_ang);
-        dbg!(self.wrist_roll_ang);
-        dbg!(self.wrist_pitch_ang);
-        dbg!(self.finger_open_ang);
-    }
-
     fn set_transform(&mut self, transform: Transform) {
         if transform.position != Vec3::ZERO {
             self.stack.translate(transform.position);
@@ -452,143 +418,6 @@ impl Hierarchy {
             IndexSize::UnsignedInt,
             0,
         );
-        self.stack.pop();
-    }
-
-    fn draw(&mut self, gl: &mut OpenGl, program: &mut Program, matrix_location: GLLocation) {
-        self.stack = MatrixStack::new();
-        let mut ctx = DrawCtx::new(gl, program, matrix_location);
-        let base = Transform::new(self.base_pos, Vec3::Y * self.base_ang, Vec3::ONE);
-        self.set_transform(base);
-
-        let base_scale = Vec3::new(1.0, 1.0, self.base_scale_z);
-        let left_base = Transform::new(self.base_left_pos, Vec3::ZERO, base_scale);
-        self.draw_cube(&mut ctx, left_base);
-
-        let right_base = Transform::new(self.base_right_pos, Vec3::ZERO, base_scale);
-        self.draw_cube(&mut ctx, right_base);
-
-        self.draw_upper_arm(&mut ctx);
-    }
-    fn draw_upper_arm(&mut self, ctx: &mut DrawCtx<'_>) {
-        self.stack.push();
-
-        let upper_arm = Transform::new(Vec3::ZERO, Vec3::X * self.upper_arm_ang, Vec3::ONE);
-        self.set_transform(upper_arm);
-
-        let upper_arm_pos = Vec3::Z * (self.upper_arm_size / 2.0 - 1.0);
-        let upper_arm_scale = Vec3::new(1.0, 1.0, self.upper_arm_size / 2.0);
-
-        let upper_arm = Transform::new(upper_arm_pos, Vec3::ZERO, upper_arm_scale);
-        self.draw_cube(ctx, upper_arm);
-
-        self.draw_lower_arm(ctx);
-        self.stack.pop();
-    }
-
-    fn draw_lower_arm(&mut self, ctx: &mut DrawCtx<'_>) {
-        self.stack.push();
-
-        let lower_arm = Transform::new(self.lower_arm_pos, Vec3::X * self.lower_arm_ang, Vec3::ONE);
-
-        self.set_transform(lower_arm);
-
-        let lower_arm_pos = Vec3::Z * (self.lower_arm_len * 0.5);
-        let lower_arm_scale = Vec3::new(
-            self.lower_arm_width * 0.5,
-            self.lower_arm_width * 0.5,
-            self.lower_arm_len * 0.5,
-        );
-
-        let lower_arm = Transform::new(lower_arm_pos, Vec3::ZERO, lower_arm_scale);
-        self.draw_cube(ctx, lower_arm);
-
-        self.draw_wrist(ctx);
-        self.stack.pop();
-    }
-
-    fn draw_wrist(&mut self, ctx: &mut DrawCtx<'_>) {
-        self.stack.push();
-
-        let wrist = Transform::new(
-            self.wrist_pos,
-            Vec3::new(self.wrist_pitch_ang, 0.0, self.wrist_roll_ang),
-            Vec3::ONE,
-        );
-
-        self.set_transform(wrist);
-        let wrist_scale = Vec3::new(
-            self.wrist_width * 0.5,
-            self.wrist_width * 0.5,
-            self.wrist_len * 0.5,
-        );
-        let wrist = Transform::new(Vec3::ZERO, Vec3::ZERO, wrist_scale);
-        self.draw_cube(ctx, wrist);
-
-        self.draw_fingers(ctx);
-        self.stack.pop();
-    }
-
-    fn draw_fingers(&mut self, ctx: &mut DrawCtx<'_>) {
-        // draw left finger
-        self.stack.push();
-
-        let left_finger = Transform::new(
-            self.left_finger_pos,
-            Vec3::Y * self.finger_open_ang,
-            Vec3::ONE,
-        );
-        self.set_transform(left_finger);
-        let finger_pos = Vec3::Z * self.finger_len * 0.5;
-        let finger_scale = Vec3::new(
-            self.finger_width * 0.5,
-            self.finger_width * 0.5,
-            self.finger_len * 0.5,
-        );
-        let finger = Transform::new(finger_pos, Vec3::ZERO, finger_scale);
-        self.draw_cube(ctx, finger);
-
-        {
-            let lower_finger = Transform::new(
-                Vec3::Z * self.finger_len,
-                Vec3::Y * -self.lower_finger_ang,
-                Vec3::ONE,
-            );
-            self.stack.push();
-
-            self.set_transform(lower_finger);
-
-            self.draw_cube(ctx, finger);
-
-            self.stack.pop();
-        }
-        self.stack.pop();
-
-        // draw right finger
-        self.stack.push();
-
-        let right_finger = Transform::new(
-            self.right_finger_pos,
-            Vec3::Y * -self.finger_open_ang,
-            Vec3::ONE,
-        );
-        self.set_transform(right_finger);
-
-        self.draw_cube(ctx, finger);
-
-        {
-            self.stack.push();
-            let lower_finger = Transform::new(
-                Vec3::Z * self.finger_len,
-                Vec3::Y * self.lower_finger_ang,
-                Vec3::ONE,
-            );
-            self.set_transform(lower_finger);
-
-            self.draw_cube(ctx, finger);
-
-            self.stack.pop();
-        }
         self.stack.pop();
     }
 }
@@ -630,6 +459,8 @@ impl Application for App {
         gl.enable(Capability::CullFace);
         gl.cull_face(CullMode::Back);
         gl.front_face(FrontFace::CW);
+
+        use opengl_rend::opengl::PolygonMode;
         // gl.polygon_mode(PolygonMode::Line);
 
         // enable depth test
@@ -670,6 +501,7 @@ impl Application for App {
             _depth_clamping: false,
             model_to_camera_matrix_location,
             hierarchy: Hierarchy::new(),
+            node_tree: build_node_tree(),
         }
     }
 
@@ -679,11 +511,12 @@ impl Application for App {
         self.gl.clear(ClearFlags::Color | ClearFlags::Depth);
         self.program.set_used();
         self.vertex_array_object.bind();
-        self.hierarchy.draw(
+        let mut draw_ctx = DrawCtx::new(
             &mut self.gl,
             &mut self.program,
             self.model_to_camera_matrix_location,
         );
+        self.hierarchy.render(&mut draw_ctx, &mut self.node_tree);
 
         self.vertex_array_object.unbind();
         self.program.set_unused();
