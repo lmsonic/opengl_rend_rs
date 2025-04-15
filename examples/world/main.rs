@@ -1,0 +1,591 @@
+#![forbid(unsafe_code)]
+use std::ffi::CString;
+
+use atree::iter::TraversalOrder;
+use atree::{Arena, Token};
+use gl::types::GLsizei;
+use glam::{Mat4, Vec3};
+use glfw::{Action, Key, Modifiers, PWindow};
+use opengl_rend::app::{run_app, Application};
+use opengl_rend::buffer::{BufferType, Usage};
+
+use opengl_rend::opengl::{
+    Capability, ClearFlags, CullMode, DepthFunc, DrawMode, FrontFace, IndexSize,
+};
+use opengl_rend::program::{GLLocation, Shader, ShaderType};
+use opengl_rend::vertex_attributes::{DataType, VertexAttribute};
+use opengl_rend::{
+    buffer::Buffer, opengl::OpenGl, program::Program, vertex_attributes::VertexArrayObject,
+};
+
+struct App {
+    window: PWindow,
+    gl: OpenGl,
+    program: Program,
+    vertex_array_object: VertexArrayObject,
+    _vertex_buffer: Buffer<f32>,
+    _index_buffer: Buffer<u32>,
+    camera_to_clip_location: GLLocation,
+    model_to_camera_matrix_location: GLLocation,
+    perspective_matrix: [f32; 16],
+    _depth_clamping: bool,
+    hierarchy: Hierarchy,
+    arena: Arena<Transform>,
+    root_token: Token,
+}
+
+const GREEN_COLOR: [f32; 4] = [0.75, 0.75, 1.0, 1.0];
+const BLUE_COLOR: [f32; 4] = [0.0, 0.5, 0.0, 1.0];
+const RED_COLOR: [f32; 4] = [1.0, 0.0, 0.0, 1.0];
+const YELLOW_COLOR: [f32; 4] = [1.0, 1.0, 0.0, 1.0];
+const CYAN_COLOR: [f32; 4] = [0.0, 1.0, 1.0, 1.0];
+const MAGENTA_COLOR: [f32; 4] = [1.0, 0.0, 1.0, 1.0];
+
+const NUMBER_OF_VERTICES: usize = 24;
+
+#[rustfmt::skip]
+const VERTEX_DATA: [f32;168] = [
+    //Front
+    1.0, 1.0, 1.0,
+    1.0, -1.0, 1.0,
+    -1.0, -1.0, 1.0,
+    -1.0, 1.0, 1.0,
+
+    //Top
+    1.0, 1.0, 1.0,
+    -1.0, 1.0, 1.0,
+    -1.0, 1.0, -1.0,
+    1.0, 1.0, -1.0,
+
+    //Let
+    1.0, 1.0, 1.0,
+    1.0, 1.0, -1.0,
+    1.0, -1.0, -1.0,
+    1.0, -1.0, 1.0,
+
+    //Back
+    1.0, 1.0, -1.0,
+    -1.0, 1.0, -1.0,
+    -1.0, -1.0, -1.0,
+    1.0, -1.0, -1.0,
+
+    //Bottom
+    1.0, -1.0, 1.0,
+    1.0, -1.0, -1.0,
+    -1.0, -1.0, -1.0,
+    -1.0, -1.0, 1.0,
+
+    //Right
+    -1.0, 1.0, 1.0,
+    -1.0, -1.0, 1.0,
+    -1.0, -1.0, -1.0,
+    -1.0, 1.0, -1.0,
+
+    GREEN_COLOR[0],GREEN_COLOR[1],GREEN_COLOR[2],GREEN_COLOR[3],
+    GREEN_COLOR[0],GREEN_COLOR[1],GREEN_COLOR[2],GREEN_COLOR[3],
+    GREEN_COLOR[0],GREEN_COLOR[1],GREEN_COLOR[2],GREEN_COLOR[3],
+    GREEN_COLOR[0],GREEN_COLOR[1],GREEN_COLOR[2],GREEN_COLOR[3],
+
+    BLUE_COLOR[0],BLUE_COLOR[1],BLUE_COLOR[2],BLUE_COLOR[3],
+    BLUE_COLOR[0],BLUE_COLOR[1],BLUE_COLOR[2],BLUE_COLOR[3],
+    BLUE_COLOR[0],BLUE_COLOR[1],BLUE_COLOR[2],BLUE_COLOR[3],
+    BLUE_COLOR[0],BLUE_COLOR[1],BLUE_COLOR[2],BLUE_COLOR[3],
+
+    RED_COLOR[0],RED_COLOR[1],RED_COLOR[2],RED_COLOR[3],
+    RED_COLOR[0],RED_COLOR[1],RED_COLOR[2],RED_COLOR[3],
+    RED_COLOR[0],RED_COLOR[1],RED_COLOR[2],RED_COLOR[3],
+    RED_COLOR[0],RED_COLOR[1],RED_COLOR[2],RED_COLOR[3],
+
+    YELLOW_COLOR[0],YELLOW_COLOR[1],YELLOW_COLOR[2],YELLOW_COLOR[3],
+    YELLOW_COLOR[0],YELLOW_COLOR[1],YELLOW_COLOR[2],YELLOW_COLOR[3],
+    YELLOW_COLOR[0],YELLOW_COLOR[1],YELLOW_COLOR[2],YELLOW_COLOR[3],
+    YELLOW_COLOR[0],YELLOW_COLOR[1],YELLOW_COLOR[2],YELLOW_COLOR[3],
+
+    CYAN_COLOR[0],CYAN_COLOR[1],CYAN_COLOR[2],CYAN_COLOR[3],
+    CYAN_COLOR[0],CYAN_COLOR[1],CYAN_COLOR[2],CYAN_COLOR[3],
+    CYAN_COLOR[0],CYAN_COLOR[1],CYAN_COLOR[2],CYAN_COLOR[3],
+    CYAN_COLOR[0],CYAN_COLOR[1],CYAN_COLOR[2],CYAN_COLOR[3],
+    
+    MAGENTA_COLOR[0],MAGENTA_COLOR[1],MAGENTA_COLOR[2],MAGENTA_COLOR[3],
+    MAGENTA_COLOR[0],MAGENTA_COLOR[1],MAGENTA_COLOR[2],MAGENTA_COLOR[3],
+    MAGENTA_COLOR[0],MAGENTA_COLOR[1],MAGENTA_COLOR[2],MAGENTA_COLOR[3],
+    MAGENTA_COLOR[0],MAGENTA_COLOR[1],MAGENTA_COLOR[2],MAGENTA_COLOR[3],
+   
+
+];
+
+#[rustfmt::skip]
+const INDEX_DATA: [u32;36] =[
+	0, 1, 2,
+	2, 3, 0,
+
+	4, 5, 6,
+	6, 7, 4,
+
+	8, 9, 10,
+	10, 11, 8,
+
+	12, 13, 14,
+	14, 15, 12,
+
+	16, 17, 18,
+	18, 19, 16,
+
+	20, 21, 22,
+	22, 23, 20,
+];
+
+fn calculate_frustum_scale(fov_degrees: f32) -> f32 {
+    let fov_radians = fov_degrees.to_radians();
+    (fov_radians * 0.5).tan().recip()
+}
+
+struct MatrixStack {
+    current_matrix: Mat4,
+    stack: Vec<Mat4>,
+}
+
+impl MatrixStack {
+    fn new() -> Self {
+        Self {
+            current_matrix: Mat4::IDENTITY,
+            stack: vec![],
+        }
+    }
+    fn top(&self) -> glam::Mat4 {
+        self.current_matrix
+    }
+    fn push(&mut self) {
+        self.stack.push(self.current_matrix);
+    }
+    fn pop(&mut self) {
+        if let Some(new_matrix) = self.stack.pop() {
+            self.current_matrix = new_matrix;
+        }
+    }
+    fn rotate_x(&mut self, angle: f32) {
+        self.current_matrix *= Mat4::from_rotation_x(angle.to_radians());
+    }
+    fn rotate_y(&mut self, angle: f32) {
+        self.current_matrix *= Mat4::from_rotation_y(angle.to_radians());
+    }
+    fn rotate_z(&mut self, angle: f32) {
+        self.current_matrix *= Mat4::from_rotation_z(angle.to_radians());
+    }
+    fn scale(&mut self, scale: Vec3) {
+        self.current_matrix *= Mat4::from_scale(scale);
+    }
+    fn translate(&mut self, translation: Vec3) {
+        self.current_matrix *= Mat4::from_translation(translation);
+    }
+}
+
+struct DrawCtx<'a> {
+    gl: &'a mut OpenGl,
+    program: &'a mut Program,
+    matrix_location: GLLocation,
+}
+
+impl<'a> DrawCtx<'a> {
+    fn new(gl: &'a mut OpenGl, program: &'a mut Program, matrix_location: GLLocation) -> Self {
+        Self {
+            gl,
+            program,
+            matrix_location,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+struct Transform {
+    position: Vec3,
+    rotation: Vec3,
+    scale: Vec3,
+}
+
+impl Transform {
+    const fn new(position: Vec3, rotation: Vec3, scale: Vec3) -> Self {
+        Self {
+            position,
+            rotation,
+            scale,
+        }
+    }
+}
+
+fn build_node_tree() -> (Arena<Transform>, Token) {
+    // Base
+    let base_pos = Vec3::new(3.0, -5.0, -0.0);
+    let base_ang = -45.0;
+    let base = Transform::new(base_pos, Vec3::Y * base_ang, Vec3::ONE);
+    let (mut arena, base_token) = Arena::with_data(base);
+
+    let base_scale_z = 3.0;
+    let base_scale = Vec3::new(1.0, 1.0, base_scale_z);
+    let base_left_pos = Vec3::new(2.0, 0.0, 0.0);
+    let base_right_pos = Vec3::new(-2.0, 0.0, 0.0);
+    let left_base = Transform::new(base_left_pos, Vec3::ZERO, base_scale);
+    let right_base = Transform::new(base_right_pos, Vec3::ZERO, base_scale);
+
+    base_token.append(&mut arena, left_base);
+    base_token.append(&mut arena, right_base);
+
+    // Upper arm
+    let upper_arm_ang = -50.0;
+    let upper_arm_base = Transform::new(Vec3::ZERO, Vec3::X * upper_arm_ang, Vec3::ONE);
+
+    let upper_arm_size = 9.0;
+    let upper_arm_pos = Vec3::Z * (upper_arm_size / 2.0 - 1.0);
+    let upper_arm_scale = Vec3::new(1.0, 1.0, upper_arm_size / 2.0);
+
+    let upper_arm = Transform::new(upper_arm_pos, Vec3::ZERO, upper_arm_scale);
+    // let mut upper_arm = node!(upper_arm_base).node(node!(upper_arm));
+
+    let upper_arm_token = base_token
+        .append(&mut arena, upper_arm_base)
+        .append(&mut arena, upper_arm);
+
+    // Lower arm
+    let lower_arm_pos = Vec3::new(0.0, 0.0, 8.0);
+    let lower_arm_ang = 60.0;
+    let lower_arm_base = Transform::new(lower_arm_pos, Vec3::X * lower_arm_ang, Vec3::ONE);
+
+    let lower_arm_len = 5.0;
+    let lower_arm_width = 1.5;
+    let lower_arm_pos = Vec3::Z * (lower_arm_len * 0.5);
+    let lower_arm_scale = Vec3::new(
+        lower_arm_width * 0.5,
+        lower_arm_width * 0.5,
+        lower_arm_len * 0.5,
+    );
+    let lower_arm = Transform::new(lower_arm_pos, Vec3::ZERO, lower_arm_scale);
+    // let mut lower_arm = node!(lower_arm_base).node(node!(lower_arm));
+
+    let lower_arm_token = upper_arm_token
+        .append(&mut arena, lower_arm_base)
+        .append(&mut arena, lower_arm);
+
+    // Wrist
+    let wrist_pos = Vec3::new(3.0, -5.0, -40.0);
+    let wrist_roll_ang = 0.0;
+    let wrist_pitch_ang = 90.0;
+    let wrist_base = Transform::new(
+        wrist_pos,
+        Vec3::new(wrist_pitch_ang, 0.0, wrist_roll_ang),
+        Vec3::ONE,
+    );
+    let wrist_len = 2.0;
+    let wrist_width = 2.0;
+    let wrist_scale = Vec3::new(wrist_width * 0.5, wrist_width * 0.5, wrist_len * 0.5);
+    let wrist = Transform::new(Vec3::ZERO, Vec3::ZERO, wrist_scale);
+    // let mut wrist = node!(wrist_base).node(node!(wrist));
+
+    let wrist_token = lower_arm_token
+        .append(&mut arena, wrist_base)
+        .append(&mut arena, wrist);
+
+    // Fingers
+    let left_finger_pos = Vec3::new(1.0, 0.0, 1.0);
+    let finger_open_ang = 70.0;
+    let left_finger = Transform::new(left_finger_pos, Vec3::Y * finger_open_ang, Vec3::ONE);
+
+    let finger_len = 2.0;
+    let finger_width = 0.5;
+    let finger_pos = Vec3::Z * finger_len * 0.5;
+    let finger_scale = Vec3::new(finger_width * 0.5, finger_width * 0.5, finger_len * 0.5);
+    let finger = Transform::new(finger_pos, Vec3::ZERO, finger_scale);
+    let lower_finger_ang = 45.0;
+    let lower_finger_left =
+        Transform::new(Vec3::Z * finger_len, Vec3::Y * -lower_finger_ang, Vec3::ONE);
+
+    wrist_token
+        .append(&mut arena, left_finger)
+        .append(&mut arena, finger)
+        .append(&mut arena, lower_finger_left);
+
+    let right_finger_pos = Vec3::new(-1.0, 0.0, 1.0);
+    let right_finger = Transform::new(right_finger_pos, Vec3::Y * -finger_open_ang, Vec3::ONE);
+    let lower_finger_right =
+        Transform::new(Vec3::Z * finger_len, Vec3::Y * lower_finger_ang, Vec3::ONE);
+
+    wrist_token
+        .append(&mut arena, right_finger)
+        .append(&mut arena, finger)
+        .append(&mut arena, lower_finger_right);
+    (arena, base_token)
+}
+
+struct Hierarchy {
+    stack: MatrixStack,
+    base_ang: f32,
+    upper_arm_ang: f32,
+    lower_arm_ang: f32,
+    wrist_roll_ang: f32,
+    wrist_pitch_ang: f32,
+    finger_open_ang: f32,
+}
+
+impl Hierarchy {
+    const STANDARD_ANGLE_INCREMENT: f32 = 11.25;
+    const SMALL_ANGLE_INCREMENT: f32 = 9.0;
+
+    fn render(&mut self, ctx: &mut DrawCtx<'_>, arena: &Arena<Transform>, root_token: Token) {
+        self.stack = MatrixStack::new();
+        if let Some(root) = arena.get(root_token) {
+            for node in root.subtree(arena, TraversalOrder::Pre) {
+                // let depth = node.ancestors(arena).count();
+                // if depth % 2 == 0 {
+                //     self.stack.push();
+                //     self.set_transform(node.data);
+                // } else {
+                // i tried real hard but i have to move on, this code is shit
+                self.draw_cube(ctx, node.data);
+                // }
+            }
+        }
+    }
+
+    fn new() -> Self {
+        Self {
+            stack: MatrixStack::new(),
+            base_ang: -45.0,
+            upper_arm_ang: -50.0,
+            lower_arm_ang: 60.0,
+            wrist_roll_ang: 0.0,
+            wrist_pitch_ang: 90.0,
+            finger_open_ang: 70.0,
+        }
+    }
+
+    fn increment_base_ang(&mut self, positive: bool) {
+        if positive {
+            self.base_ang += Self::STANDARD_ANGLE_INCREMENT;
+        } else {
+            self.base_ang -= Self::STANDARD_ANGLE_INCREMENT;
+        }
+        self.base_ang %= 360.0;
+    }
+    fn increment_upper_arm_ang(&mut self, positive: bool) {
+        if positive {
+            self.upper_arm_ang += Self::STANDARD_ANGLE_INCREMENT;
+        } else {
+            self.upper_arm_ang -= Self::STANDARD_ANGLE_INCREMENT;
+        }
+        self.upper_arm_ang = self.upper_arm_ang.clamp(-90.0, 0.0);
+    }
+    fn increment_lower_arm_ang(&mut self, positive: bool) {
+        if positive {
+            self.lower_arm_ang += Self::STANDARD_ANGLE_INCREMENT;
+        } else {
+            self.lower_arm_ang -= Self::STANDARD_ANGLE_INCREMENT;
+        }
+        self.lower_arm_ang = self.lower_arm_ang.clamp(0.0, 146.25);
+    }
+    fn increment_wrist_pitch(&mut self, positive: bool) {
+        if positive {
+            self.wrist_pitch_ang += Self::STANDARD_ANGLE_INCREMENT;
+        } else {
+            self.wrist_pitch_ang -= Self::STANDARD_ANGLE_INCREMENT;
+        }
+        self.wrist_pitch_ang %= 360.0
+    }
+    fn increment_wrist_roll(&mut self, positive: bool) {
+        if positive {
+            self.wrist_roll_ang += Self::STANDARD_ANGLE_INCREMENT;
+        } else {
+            self.wrist_roll_ang -= Self::STANDARD_ANGLE_INCREMENT;
+        }
+        self.wrist_roll_ang %= 360.0
+    }
+    fn increment_finger_ang(&mut self, positive: bool) {
+        if positive {
+            self.finger_open_ang += Self::SMALL_ANGLE_INCREMENT;
+        } else {
+            self.finger_open_ang -= Self::SMALL_ANGLE_INCREMENT;
+        }
+        self.finger_open_ang = self.finger_open_ang.clamp(9.0, 180.0);
+    }
+
+    fn set_transform(&mut self, transform: Transform) {
+        if transform.position != Vec3::ZERO {
+            self.stack.translate(transform.position);
+        }
+        if transform.rotation.z != 0.0 {
+            self.stack.rotate_z(transform.rotation.z);
+        }
+        if transform.rotation.x != 0.0 {
+            self.stack.rotate_x(transform.rotation.x);
+        }
+        if transform.rotation.y != 0.0 {
+            self.stack.rotate_y(transform.rotation.y);
+        }
+        if transform.scale != Vec3::ZERO {
+            self.stack.scale(transform.scale);
+        }
+    }
+
+    fn draw_cube(&mut self, ctx: &mut DrawCtx<'_>, transform: Transform) {
+        self.stack.push();
+        self.set_transform(transform);
+        ctx.program
+            .set_uniform(ctx.matrix_location, self.stack.top());
+        ctx.gl.draw_elements(
+            DrawMode::Triangles,
+            INDEX_DATA.len() as GLsizei,
+            IndexSize::UnsignedInt,
+            0,
+        );
+        self.stack.pop();
+    }
+}
+
+impl Application for App {
+    fn new(mut window: PWindow) -> App {
+        let mut gl = OpenGl::new(&mut window);
+
+        // initialize program
+        let vert_str = CString::new(include_str!("vert.vert")).unwrap();
+        let frag_str = CString::new(include_str!("frag.frag")).unwrap();
+        let vert_shader = Shader::new(&vert_str, ShaderType::Vertex).unwrap();
+        let frag_shader = Shader::new(&frag_str, ShaderType::Fragment).unwrap();
+        let mut program = Program::new(&[vert_shader, frag_shader]).unwrap();
+
+        // initialize vertex buffer
+        let mut vertex_buffer = Buffer::new(BufferType::ArrayBuffer);
+        vertex_buffer.bind();
+        vertex_buffer.buffer_data(&VERTEX_DATA, Usage::StaticDraw);
+        vertex_buffer.unbind();
+        // initialize index buffer
+        let mut index_buffer = Buffer::new(BufferType::IndexBuffer);
+        index_buffer.bind();
+        index_buffer.buffer_data(&INDEX_DATA, Usage::StaticDraw);
+        // initialize vaos
+        let mut vertex_array_object = VertexArrayObject::new();
+        vertex_array_object.bind();
+        let vec3 = VertexAttribute::new(3, DataType::Float, false);
+        let vec4 = VertexAttribute::new(4, DataType::Float, false);
+
+        let color_data_offset = std::mem::size_of::<f32>() * 3 * NUMBER_OF_VERTICES;
+
+        vertex_buffer.bind();
+        vertex_array_object.set_attribute(0, &vec3, 0, 0);
+        vertex_array_object.set_attribute(1, &vec4, 0, color_data_offset as GLsizei);
+        index_buffer.bind();
+
+        // enable backface culling
+        gl.enable(Capability::CullFace);
+        gl.cull_face(CullMode::Back);
+        gl.front_face(FrontFace::CW);
+
+        // use opengl_rend::opengl::PolygonMode;
+        // gl.polygon_mode(PolygonMode::Line);
+
+        // enable depth test
+        gl.enable(Capability::DepthTest);
+        gl.set_depth_mask(true);
+        gl.depth_func(DepthFunc::LessEqual);
+        gl.depth_range(0.0, 1.0);
+
+        // get and set uniforms
+        let model_to_camera_matrix_location =
+            program.get_uniform_location(c"modelToCamera").unwrap();
+        let camera_to_clip_location = program.get_uniform_location(c"cameraToClip").unwrap();
+
+        let frustum_scale = calculate_frustum_scale(45.0);
+        let z_near = 1.0;
+        let z_far = 100.0;
+
+        let mut matrix: [f32; 16] = [0.0; 16];
+        matrix[0] = frustum_scale;
+        matrix[5] = frustum_scale;
+        matrix[10] = (z_far + z_near) / (z_near - z_far);
+        matrix[14] = (2.0 * z_far * z_near) / (z_near - z_far);
+        matrix[11] = -1.0;
+
+        program.set_used();
+        program.set_uniform(camera_to_clip_location, matrix);
+        program.set_unused();
+
+        let (arena, root_token) = build_node_tree();
+
+        Self {
+            gl,
+            program,
+            vertex_array_object,
+            _vertex_buffer: vertex_buffer,
+            _index_buffer: index_buffer,
+            window,
+            camera_to_clip_location,
+            perspective_matrix: matrix,
+            _depth_clamping: false,
+            model_to_camera_matrix_location,
+            hierarchy: Hierarchy::new(),
+            arena,
+            root_token,
+        }
+    }
+
+    fn display(&mut self) {
+        self.gl.clear_color(0.1, 0.1, 0.1, 0.0);
+        self.gl.clear_depth(1.0);
+        self.gl.clear(ClearFlags::Color | ClearFlags::Depth);
+        self.program.set_used();
+        self.vertex_array_object.bind();
+        let mut draw_ctx = DrawCtx::new(
+            &mut self.gl,
+            &mut self.program,
+            self.model_to_camera_matrix_location,
+        );
+        self.hierarchy
+            .render(&mut draw_ctx, &self.arena, self.root_token);
+
+        self.vertex_array_object.unbind();
+        self.program.set_unused();
+    }
+
+    fn keyboard(&mut self, key: Key, action: Action, _modifier: Modifiers) {
+        if action == Action::Press || action == Action::Repeat {
+            match key {
+                Key::A => self.hierarchy.increment_base_ang(true),
+                Key::D => self.hierarchy.increment_base_ang(false),
+                Key::W => self.hierarchy.increment_upper_arm_ang(true),
+                Key::S => self.hierarchy.increment_upper_arm_ang(false),
+                Key::R => self.hierarchy.increment_lower_arm_ang(true),
+                Key::F => self.hierarchy.increment_lower_arm_ang(false),
+                Key::T => self.hierarchy.increment_wrist_pitch(true),
+                Key::G => self.hierarchy.increment_wrist_pitch(false),
+                Key::Z => self.hierarchy.increment_wrist_roll(true),
+                Key::C => self.hierarchy.increment_wrist_roll(false),
+                Key::Q => self.hierarchy.increment_finger_ang(true),
+                Key::E => self.hierarchy.increment_finger_ang(false),
+                _ => {}
+            }
+        }
+    }
+
+    fn reshape(&mut self, width: i32, height: i32) {
+        let frustum_scale = calculate_frustum_scale(45.0);
+
+        self.perspective_matrix[0] = frustum_scale / (width as f32 / height as f32);
+        self.perspective_matrix[5] = frustum_scale;
+
+        self.program.set_used();
+        self.program
+            .set_uniform(self.camera_to_clip_location, self.perspective_matrix);
+        self.program.set_unused();
+
+        self.gl.viewport(0, 0, width as GLsizei, height as GLsizei);
+    }
+
+    fn window(&self) -> &PWindow {
+        &self.window
+    }
+
+    fn window_mut(&mut self) -> &mut PWindow {
+        &mut self.window
+    }
+}
+
+fn main() {
+    run_app::<App>();
+}
