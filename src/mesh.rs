@@ -1,6 +1,7 @@
 use std::{io::Read, path::Path};
 
 use gl::types::{GLbyte, GLenum, GLfloat, GLint, GLintptr, GLshort, GLubyte, GLuint, GLushort};
+use glam::bool;
 use xml::{attribute::OwnedAttribute, reader::XmlEvent, EventReader};
 
 use crate::{
@@ -22,24 +23,6 @@ enum RenderCommand {
         start: GLint,
         end: GLint,
     },
-}
-
-impl RenderCommand {
-    fn render(self, gl: &mut OpenGl) {
-        match self {
-            RenderCommand::Indexed {
-                primitive,
-                count,
-                index_size,
-                offset,
-            } => gl.draw_elements(primitive, count, index_size, offset),
-            RenderCommand::Normal {
-                primitive,
-                start,
-                end,
-            } => gl.draw_arrays(primitive, start, end),
-        }
-    }
 }
 
 enum AttributeData {
@@ -94,25 +77,6 @@ fn parse_data_type(s: &str) -> Option<(DataType, bool)> {
 
 impl Attribute {
     fn new(attributes: &[OwnedAttribute], string_data: &str) -> Self {
-        // for e in parser {
-        //     match e {
-        //         Ok(event) => match event {
-        //             XmlEvent::StartElement {
-        //                 name, attributes, ..
-        //             } => match name.local_name.as_str() {
-        //                 "attribute" => {
-        //                     // send to attributes
-        //                 }
-        //             },
-
-        //             XmlEvent::Characters(data) => {
-        //                 // send data after attributes
-        //             }
-        //             _ => {}
-        //         },
-        //         Err(err) => eprintln!("{err}"),
-        //     }
-        // }
         let index = attributes
             .iter()
             .find(|a| a.name.local_name == "index")
@@ -193,11 +157,14 @@ impl Attribute {
     }
 }
 
-fn process_vao(name: &OwnedAttribute, attrib: &[OwnedAttribute]) -> (String, Vec<GLuint>) {
+fn process_vao(
+    name: &OwnedAttribute,
+    source_attributes: &[OwnedAttribute],
+) -> (String, Vec<GLuint>) {
     assert_eq!(name.name.local_name, "name");
     let name = name.value.clone();
     let mut attributes = vec![];
-    for attrib in attrib {
+    for attrib in source_attributes {
         assert_eq!(attrib.name.local_name, "attrib");
         let value = attrib
             .value
@@ -206,6 +173,79 @@ fn process_vao(name: &OwnedAttribute, attrib: &[OwnedAttribute]) -> (String, Vec
         attributes.push(value);
     }
     (name, attributes)
+}
+
+struct IndexData {
+    data_type: DataType,
+    data: Vec<AttributeData>,
+}
+
+impl IndexData {
+    fn new(attributes: &[OwnedAttribute], string_data: &str) -> Self {
+        let data_type = attributes
+            .iter()
+            .find(|a| a.name.local_name == "type")
+            .expect("Indices need to have a data type");
+        let (data_type, _) = parse_data_type(&data_type.value)
+            .expect("Improper 'type' attribute value on 'index' element.");
+        assert_eq!(
+            data_type,
+            DataType::UnsignedByte,
+            "Improper 'type' attribute value on 'index' element."
+        );
+        assert_eq!(
+            data_type,
+            DataType::UnsignedInt,
+            "Improper 'type' attribute value on 'index' element."
+        );
+        assert_eq!(
+            data_type,
+            DataType::UnsignedShort,
+            "Improper 'type' attribute value on 'index' element."
+        );
+
+        // parse data
+        let mut data = vec![];
+        for word in string_data.split_whitespace() {
+            let value = parse_data(data_type, word).expect("Parse error in array data stream.");
+            data.push(value);
+        }
+        Self { data_type, data }
+    }
+
+    fn byte_size(&self) -> usize {
+        self.data.len() * self.data_type.size()
+    }
+
+    fn fill_bound_buffer_object(&self, gl: &mut OpenGl, offset: GLintptr) {
+        // i dont like this
+        unsafe {
+            gl::BufferSubData(
+                BufferType::IndexBuffer as GLenum,
+                offset,
+                std::mem::size_of_val(&self.data) as isize,
+                self.data.as_ptr() as *const _,
+            )
+        };
+    }
+}
+
+impl RenderCommand {
+    fn render(self, gl: &mut OpenGl) {
+        match self {
+            RenderCommand::Indexed {
+                primitive,
+                count,
+                index_size,
+                offset,
+            } => gl.draw_elements(primitive, count, index_size, offset),
+            RenderCommand::Normal {
+                primitive,
+                start,
+                end,
+            } => gl.draw_arrays(primitive, start, end),
+        }
+    }
 }
 
 struct MeshData {}

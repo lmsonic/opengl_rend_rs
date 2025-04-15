@@ -2,7 +2,7 @@ use gl::types::{GLenum, GLint, GLsizei, GLuint};
 
 use crate::{GLHandle, NULL_HANDLE};
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum DataType {
     Byte = gl::BYTE,
