@@ -17,7 +17,7 @@ pub enum DataType {
 }
 
 impl DataType {
-    fn size(&self) -> usize {
+    pub fn size(&self) -> usize {
         match self {
             DataType::Byte | DataType::UnsignedByte => 1,
             DataType::Short | DataType::UnsignedShort => 2,
@@ -27,12 +27,15 @@ impl DataType {
             DataType::Fixed => 2,
         }
     }
+    pub fn is_floating_point(self) -> bool {
+        self == DataType::Float || self == DataType::Double || self == DataType::Fixed
+    }
 }
 
 pub struct VertexAttribute {
-    components: GLint,
-    data_type: DataType,
-    normalized: bool,
+    pub components: GLint,
+    pub data_type: DataType,
+    pub normalized: bool,
 }
 
 impl VertexAttribute {
@@ -49,9 +52,7 @@ impl VertexAttribute {
     }
 
     pub fn is_floating_point(&self) -> bool {
-        self.data_type == DataType::Float
-            || self.data_type == DataType::Double
-            || self.data_type == DataType::Fixed
+        self.data_type.is_floating_point()
     }
 }
 
@@ -112,6 +113,7 @@ impl VertexArrayObject {
                 );
             };
         } else {
+            // integral
             unsafe {
                 gl::VertexAttribIPointer(
                     location,

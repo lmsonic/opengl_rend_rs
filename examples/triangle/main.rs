@@ -7,7 +7,7 @@ use glfw::PWindow;
 use glfw::{Action, Key, Modifiers};
 use opengl_rend::app::{run_app, Application};
 use opengl_rend::buffer::{BufferType, Usage};
-use opengl_rend::opengl::{ClearFlags, DrawMode};
+use opengl_rend::opengl::{ClearFlags, Primitive};
 use opengl_rend::program::{Shader, ShaderType};
 use opengl_rend::vertex_attributes::{DataType, VertexAttribute};
 use opengl_rend::{
@@ -69,7 +69,7 @@ impl Application for App {
         self.program.set_used();
         self.vertex_array_object.bind();
 
-        self.gl.draw_arrays(DrawMode::Triangles, 0, 3);
+        self.gl.draw_arrays(Primitive::Triangles, 0, 3);
 
         self.program.set_unused();
     }

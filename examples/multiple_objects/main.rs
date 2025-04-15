@@ -6,7 +6,7 @@ use glfw::{Action, Key, Modifiers, PWindow};
 use opengl_rend::app::{run_app, Application};
 use opengl_rend::buffer::{BufferType, Usage};
 use opengl_rend::opengl::{
-    Capability, ClearFlags, CullMode, DepthFunc, DrawMode, FrontFace, IndexSize,
+    Capability, ClearFlags, CullMode, DepthFunc, Primitive, FrontFace, IndexSize,
 };
 use opengl_rend::program::{GLLocation, Shader, ShaderType};
 use opengl_rend::vertex_attributes::{DataType, VertexAttribute};
@@ -248,7 +248,7 @@ impl Application for App {
         self.program
             .set_uniform(self.offset_location, (0.0, 0.0, 0.5));
         self.gl.draw_elements(
-            DrawMode::Triangles,
+            Primitive::Triangles,
             INDEX_DATA.len() as GLsizei,
             IndexSize::UnsignedInt,
             0,
@@ -257,7 +257,7 @@ impl Application for App {
         self.program
             .set_uniform(self.offset_location, (0.0, 0.0, 0.3));
         self.gl.draw_elements_base_vertex(
-            DrawMode::Triangles,
+            Primitive::Triangles,
             INDEX_DATA.len() as GLsizei,
             IndexSize::UnsignedInt,
             0,

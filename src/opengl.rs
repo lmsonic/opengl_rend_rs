@@ -70,7 +70,7 @@ pub enum FrontFace {
 
 #[derive(Clone, Copy)]
 #[repr(u32)]
-pub enum DrawMode {
+pub enum Primitive {
     Points = gl::POINTS,
     LineStrip = gl::LINE_STRIP,
     LineLoop = gl::LINE_LOOP,
@@ -243,12 +243,12 @@ impl OpenGl {
     pub fn clear(&mut self, mask: ClearFlags) {
         unsafe { gl::Clear(mask.bits()) };
     }
-    pub fn draw_arrays(&mut self, mode: DrawMode, first: GLint, count: GLsizei) {
+    pub fn draw_arrays(&mut self, mode: Primitive, first: GLint, count: GLsizei) {
         unsafe { gl::DrawArrays(mode as GLenum, first, count) };
     }
     pub fn draw_elements(
         &mut self,
-        mode: DrawMode,
+        mode: Primitive,
         count: GLint,
         index_size: IndexSize,
         offset: usize,
@@ -265,7 +265,7 @@ impl OpenGl {
 
     pub fn draw_elements_base_vertex(
         &mut self,
-        mode: DrawMode,
+        mode: Primitive,
         count: GLint,
         index_size: IndexSize,
         offset: usize,
