@@ -74,7 +74,7 @@ pub enum Primitive {
     Points = gl::POINTS,
     LineStrip = gl::LINE_STRIP,
     LineLoop = gl::LINE_LOOP,
-    LINES = gl::LINES,
+    Lines = gl::LINES,
     LineStripAdjacency = gl::LINE_STRIP_ADJACENCY,
     LinesAdjacency = gl::LINES_ADJACENCY,
     TriangleStrip = gl::TRIANGLE_STRIP,
