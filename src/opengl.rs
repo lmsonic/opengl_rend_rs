@@ -93,6 +93,16 @@ pub enum IndexSize {
     UnsignedInt = gl::UNSIGNED_INT,
 }
 
+impl IndexSize {
+    pub fn size(self) -> usize {
+        match self {
+            IndexSize::UnsignedByte => 1,
+            IndexSize::UnsignedShort => 2,
+            IndexSize::UnsignedInt => 4,
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 #[repr(u32)]
 pub enum DepthFunc {

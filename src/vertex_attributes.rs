@@ -1,6 +1,6 @@
 use gl::types::{GLenum, GLint, GLsizei, GLuint};
 
-use crate::{GLHandle, NULL_HANDLE};
+use crate::{opengl::IndexSize, GLHandle, NULL_HANDLE};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
@@ -14,6 +14,16 @@ pub enum DataType {
     Double = gl::DOUBLE,
     Float = gl::FLOAT,
     Fixed = gl::FIXED,
+}
+
+impl From<IndexSize> for DataType {
+    fn from(value: IndexSize) -> Self {
+        match value {
+            IndexSize::UnsignedByte => DataType::UnsignedByte,
+            IndexSize::UnsignedShort => DataType::UnsignedShort,
+            IndexSize::UnsignedInt => DataType::UnsignedInt,
+        }
+    }
 }
 
 impl DataType {
@@ -76,6 +86,9 @@ impl VertexArrayObject {
     }
 
     pub fn unbind(&mut self) {
+        unsafe { gl::BindVertexArray(NULL_HANDLE) };
+    }
+    pub fn unbind_all() {
         unsafe { gl::BindVertexArray(NULL_HANDLE) };
     }
 

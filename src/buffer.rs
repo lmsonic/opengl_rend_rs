@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use gl::types::{GLenum, GLintptr};
+use gl::types::{GLenum, GLintptr, GLsizeiptr};
 
 use crate::{GLHandle, NULL_HANDLE};
 
@@ -27,13 +27,14 @@ pub enum BufferType {
 #[derive(Clone, Copy)]
 #[repr(u32)]
 pub enum Usage {
+    StaticDraw = gl::STATIC_DRAW,
+    DynamicDraw = gl::DYNAMIC_DRAW,
+
     StreamDraw = gl::STREAM_DRAW,
     StreamRead = gl::STREAM_READ,
     StreamCopy = gl::STREAM_COPY,
-    StaticDraw = gl::STATIC_DRAW,
     StaticRead = gl::STATIC_READ,
     StaticCopy = gl::STATIC_COPY,
-    DynamicDraw = gl::DYNAMIC_DRAW,
     DynamicRead = gl::DYNAMIC_READ,
     DynamicCopy = gl::DYNAMIC_COPY,
 }
@@ -59,6 +60,16 @@ impl<T> Buffer<T> {
             target,
             phantom: PhantomData,
         }
+    }
+    pub fn reserve_data(&mut self, size: GLsizeiptr, usage: Usage) {
+        unsafe {
+            gl::BufferData(
+                self.target as GLenum,
+                size,
+                std::ptr::null(),
+                usage as GLenum,
+            )
+        };
     }
 
     pub fn buffer_data(&mut self, data: &[T], usage: Usage) {

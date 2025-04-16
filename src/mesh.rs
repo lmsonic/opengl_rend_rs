@@ -1,13 +1,12 @@
 use std::{collections::HashMap, fs::File, io::BufReader, path::Path, str::FromStr};
 
-use gl::types::{GLbyte, GLenum, GLfloat, GLint, GLintptr, GLshort, GLubyte, GLuint, GLushort};
+use gl::types::{GLbyte, GLfloat, GLint, GLshort, GLsizeiptr, GLubyte, GLuint, GLushort};
 use glam::bool;
-use xml::{attribute::OwnedAttribute, name::OwnedName, reader::XmlEvent, EventReader};
+use xml::{attribute::OwnedAttribute, reader::XmlEvent, EventReader};
 
 use crate::{
-    buffer::{Buffer, BufferType},
+    buffer::{Buffer, BufferType, Usage},
     opengl::{IndexSize, OpenGl, Primitive},
-    program::GLLocation,
     vertex_attributes::{DataType, VertexArrayObject, VertexAttribute},
 };
 
@@ -19,6 +18,14 @@ enum AttributeData {
     Short(GLshort),
     UnsignedByte(GLubyte),
     Byte(GLbyte),
+}
+
+fn parse_index_data(index_size: IndexSize, s: &str) -> Option<AttributeData> {
+    match index_size {
+        IndexSize::UnsignedByte => Some(AttributeData::UnsignedByte(s.parse::<GLubyte>().ok()?)),
+        IndexSize::UnsignedShort => Some(AttributeData::Short(s.parse::<GLshort>().ok()?)),
+        IndexSize::UnsignedInt => Some(AttributeData::UnsignedInt(s.parse::<GLuint>().ok()?)),
+    }
 }
 
 fn parse_data(data_type: DataType, s: &str) -> Option<AttributeData> {
@@ -128,18 +135,7 @@ impl Attribute {
         self.data.len() * self.vertex_attribute.data_type.size()
     }
 
-    fn fill_bound_buffer_object(&self, gl: &mut OpenGl, offset: GLintptr) {
-        // i dont like this
-        unsafe {
-            gl::BufferSubData(
-                BufferType::IndexBuffer as GLenum,
-                offset,
-                std::mem::size_of_val(&self.data) as isize,
-                self.data.as_ptr() as *const _,
-            )
-        };
-    }
-    fn setup_attribute_array(&self, gl: &mut OpenGl, vao: &mut VertexArrayObject, offset: GLint) {
+    fn setup_attribute_array(&self, vao: &mut VertexArrayObject, offset: GLint) {
         vao.set_attribute(self.index, &self.vertex_attribute, 0, offset);
     }
 }
@@ -162,35 +158,33 @@ fn process_vao(
 }
 
 struct IndexData {
-    data_type: DataType,
+    data_type: IndexSize,
     data: Vec<AttributeData>,
+}
+
+fn parse_index_type(s: &str) -> Option<(IndexSize, bool)> {
+    match s {
+        "uint" => Some((IndexSize::UnsignedInt, false)),
+        "norm-uint" => Some((IndexSize::UnsignedInt, true)),
+        "ushort" => Some((IndexSize::UnsignedShort, false)),
+        "norm-ushort" => Some((IndexSize::UnsignedShort, true)),
+        "ubyte" => Some((IndexSize::UnsignedByte, false)),
+        "norm-ubyte" => Some((IndexSize::UnsignedByte, true)),
+        _ => None,
+    }
 }
 
 impl IndexData {
     fn new(attributes: &[OwnedAttribute], string_data: &str) -> Self {
         let data_type = find_attribute_unwrap(attributes, "type");
-        let (data_type, _) = parse_data_type(&data_type)
+        let (data_type, _) = parse_index_type(&data_type)
             .expect("Improper 'type' attribute value on 'index' element.");
-        assert_eq!(
-            data_type,
-            DataType::UnsignedByte,
-            "Improper 'type' attribute value on 'index' element."
-        );
-        assert_eq!(
-            data_type,
-            DataType::UnsignedInt,
-            "Improper 'type' attribute value on 'index' element."
-        );
-        assert_eq!(
-            data_type,
-            DataType::UnsignedShort,
-            "Improper 'type' attribute value on 'index' element."
-        );
 
         // parse data
         let mut data = vec![];
         for word in string_data.split_whitespace() {
-            let value = parse_data(data_type, word).expect("Parse error in array data stream.");
+            let value =
+                parse_index_data(data_type, word).expect("Parse error in array data stream.");
             data.push(value);
         }
         Self { data_type, data }
@@ -198,18 +192,6 @@ impl IndexData {
 
     fn byte_size(&self) -> usize {
         self.data.len() * self.data_type.size()
-    }
-
-    fn fill_bound_buffer_object(&self, gl: &mut OpenGl, offset: GLintptr) {
-        // i dont like this
-        unsafe {
-            gl::BufferSubData(
-                BufferType::IndexBuffer as GLenum,
-                offset,
-                std::mem::size_of_val(&self.data) as isize,
-                self.data.as_ptr() as *const _,
-            )
-        };
     }
 }
 #[derive(Clone, Copy)]
@@ -294,21 +276,21 @@ impl RenderCommand {
 }
 
 struct MeshData {
-    attributes_array_buffer: Buffer<Attribute>,
-    index_buffer: Buffer<GLuint>,
+    attrib_array_buffer: Buffer<AttributeData>,
+    index_buffer: Buffer<AttributeData>,
     vao: VertexArrayObject,
     named_vaos: HashMap<String, VertexArrayObject>,
-    primitives: Vec<RenderCommand>,
+    commands: Vec<RenderCommand>,
 }
 
 impl MeshData {
     fn new() -> Self {
         Self {
-            attributes_array_buffer: Buffer::new(BufferType::ArrayBuffer),
+            attrib_array_buffer: Buffer::new(BufferType::ArrayBuffer),
             index_buffer: Buffer::new(BufferType::IndexBuffer),
             vao: VertexArrayObject::new(),
             named_vaos: HashMap::new(),
-            primitives: Vec::new(),
+            commands: Vec::new(),
         }
     }
 }
@@ -379,7 +361,7 @@ impl Mesh {
                                         if let RenderCommand::Indexed { .. } = primitive {
                                             parser_state = ParserState::InIndicesTag { attributes };
                                         }
-                                        mesh_data.primitives.push(primitive);
+                                        mesh_data.commands.push(primitive);
                                     }
                                 }
                             }
@@ -428,6 +410,112 @@ impl Mesh {
                 Err(err) => eprintln!("Error : {err}"),
             }
         }
+
+        // this is trying to calculate how much they need to allocate for attributes
+        let mut attribute_buffer_size = 0;
+        let mut attribute_start_locs = Vec::with_capacity(attribs.len());
+        let mut num_elements = 0;
+        for attrib in &attribs {
+            attribute_buffer_size = if attribute_buffer_size % 16 != 0 {
+                // i hate the c++ code i took this from. WTF
+                // i guess it might be alignment?
+                attribute_buffer_size + (16 - attribute_buffer_size % 16)
+            } else {
+                attribute_buffer_size
+            };
+            attribute_start_locs.push(attribute_buffer_size);
+
+            attribute_buffer_size += attrib.byte_size();
+
+            if num_elements != 0 {
+                assert_eq!(
+                    num_elements,
+                    attrib.num_elements(),
+                    "Some of the attribute arrays have different element counts."
+                )
+            } else {
+                num_elements = attrib.num_elements();
+            }
+        }
+
+        mesh_data.vao.bind();
+        mesh_data.attrib_array_buffer.bind();
+        mesh_data
+            .attrib_array_buffer
+            .reserve_data(attribute_buffer_size as GLsizeiptr, Usage::StaticDraw);
+
+        for (i, attrib) in attribs.iter().enumerate() {
+            let offset = attribute_start_locs[i];
+            mesh_data
+                .attrib_array_buffer
+                .update_data(&attrib.data, offset as isize);
+            attrib.setup_attribute_array(&mut mesh_data.vao, offset as GLint);
+        }
+
+        // fill named vaos
+        for (name, source_list) in named_vao_list {
+            let mut vao = VertexArrayObject::new();
+            vao.bind();
+            for attrib in source_list {
+                let offset = attribs
+                    .iter()
+                    .position(|a| a.index == attrib)
+                    .unwrap_or_else(|| {
+                        panic!("could not find source index {attrib} for vao {name}")
+                    });
+
+                attribs[offset].setup_attribute_array(&mut vao, offset as GLint);
+            }
+            mesh_data.named_vaos.insert(name, vao);
+        }
+        mesh_data.vao.unbind();
+
+        // calculate index buffer size
+        let mut index_buffer_size = 0;
+        let mut index_start_locs = Vec::with_capacity(index_data.len());
+        for data in &index_data {
+            index_buffer_size = if index_buffer_size % 16 != 0 {
+                index_buffer_size + (16 - index_buffer_size % 16)
+            } else {
+                index_buffer_size
+            };
+            index_start_locs.push(index_buffer_size);
+            index_buffer_size += data.byte_size();
+        }
+
+        // create index buffer
+        if index_buffer_size > 0 {
+            mesh_data.vao.bind();
+            mesh_data.index_buffer.bind();
+            mesh_data
+                .index_buffer
+                .reserve_data(index_buffer_size as GLsizeiptr, Usage::StaticDraw);
+
+            // fill in data
+            for (i, data) in index_data.iter().enumerate() {
+                let offset = index_start_locs[i];
+                mesh_data
+                    .index_buffer
+                    .update_data(&data.data, offset as isize);
+            }
+            // fill in indexed rendering commands like said earlier
+            let mut i = 0;
+            for commands in &mut mesh_data.commands {
+                if let RenderCommand::Indexed {
+                    ref mut count,
+                    ref mut index_size,
+                    ref mut offset,
+                    ..
+                } = commands
+                {
+                    *offset = index_start_locs[i];
+                    *count = index_data[i].data.len() as GLint;
+                    *index_size = index_data[i].data_type;
+                    i += 1;
+                }
+            }
+        }
+
         Self { mesh_data }
     }
     pub fn render(&mut self) {}

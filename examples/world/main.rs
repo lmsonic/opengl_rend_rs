@@ -7,7 +7,7 @@ use glfw::{Action, Key, Modifiers, PWindow};
 use opengl_rend::app::{run_app, Application};
 use opengl_rend::buffer::{BufferType, Usage};
 use opengl_rend::opengl::{
-    Capability, ClearFlags, CullMode, DepthFunc, Primitive, FrontFace, IndexSize, PolygonMode,
+    Capability, ClearFlags, CullMode, DepthFunc, FrontFace, IndexSize, PolygonMode, Primitive,
 };
 use opengl_rend::program::{GLLocation, Shader, ShaderType};
 use opengl_rend::vertex_attributes::{DataType, VertexAttribute};
