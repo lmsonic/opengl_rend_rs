@@ -44,13 +44,13 @@ impl MatrixStack {
         let q = Quat::from_axis_angle(axis, angle_deg.to_radians());
         self.current_matrix *= Mat4::from_quat(q);
     }
-    pub fn rotate_x(&mut self, axis: Vec3, angle_deg: f32) {
+    pub fn rotate_x(&mut self, angle_deg: f32) {
         self.current_matrix *= Mat4::from_rotation_x(angle_deg.to_radians());
     }
-    pub fn rotate_y(&mut self, axis: Vec3, angle_deg: f32) {
+    pub fn rotate_y(&mut self, angle_deg: f32) {
         self.current_matrix *= Mat4::from_rotation_y(angle_deg.to_radians());
     }
-    pub fn rotate_z(&mut self, axis: Vec3, angle_deg: f32) {
+    pub fn rotate_z(&mut self, angle_deg: f32) {
         self.current_matrix *= Mat4::from_rotation_z(angle_deg.to_radians());
     }
     pub fn scale(&mut self, scale: Vec3) {

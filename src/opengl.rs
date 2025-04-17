@@ -68,7 +68,7 @@ pub enum FrontFace {
     CCW = gl::CCW,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum Primitive {
     Points = gl::POINTS,
@@ -85,7 +85,7 @@ pub enum Primitive {
     Patches = gl::PATCHES,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(u32)]
 pub enum IndexSize {
     UnsignedByte = gl::UNSIGNED_BYTE,

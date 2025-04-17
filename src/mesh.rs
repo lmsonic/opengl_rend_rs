@@ -10,6 +10,7 @@ use crate::{
     vertex_attributes::{DataType, VertexArrayObject, VertexAttribute},
 };
 
+#[derive(Debug, PartialEq, Clone, Copy)]
 enum AttributeData {
     Float(GLfloat),
     UnsignedInt(GLuint),
@@ -23,7 +24,7 @@ enum AttributeData {
 fn parse_index_data(index_size: IndexSize, s: &str) -> Option<AttributeData> {
     match index_size {
         IndexSize::UnsignedByte => Some(AttributeData::UnsignedByte(s.parse::<GLubyte>().ok()?)),
-        IndexSize::UnsignedShort => Some(AttributeData::Short(s.parse::<GLshort>().ok()?)),
+        IndexSize::UnsignedShort => Some(AttributeData::UnsignedShort(s.parse::<GLushort>().ok()?)),
         IndexSize::UnsignedInt => Some(AttributeData::UnsignedInt(s.parse::<GLuint>().ok()?)),
     }
 }
@@ -257,6 +258,7 @@ impl RenderCommand {
             _ => panic!("Bad command element {name} Must be 'indices' or 'arrays'."),
         }
     }
+
     fn render(self, gl: &mut OpenGl) {
         match self {
             RenderCommand::Indexed {
@@ -299,14 +301,20 @@ pub struct Mesh {
     mesh_data: MeshData,
 }
 
+struct ParsedData {
+    attribs: Vec<Attribute>,
+    indices_list: Vec<IndexData>,
+    named_vao_list: Vec<(String, Vec<GLuint>)>,
+    commands: Vec<RenderCommand>,
+}
+
 impl Mesh {
-    pub fn new(path: impl AsRef<Path>) -> Self {
-        let mut mesh_data = MeshData::new();
+    fn parse_xml(path: impl AsRef<Path>) -> ParsedData {
         let mut attribs: Vec<Attribute> = Vec::with_capacity(16);
         // Map from Attribute indices to the indices in the attribs vector just created [0,16]
-        let mut attrib_index_map: HashMap<GLuint, usize> = HashMap::new();
-        let mut index_data: Vec<IndexData> = vec![];
+        let mut indices: Vec<IndexData> = vec![];
         let mut named_vao_list: Vec<(String, Vec<GLuint>)> = vec![];
+        let mut commands: Vec<RenderCommand> = vec![];
 
         let path = path.as_ref();
         let file = File::open(path).unwrap_or_else(|_| panic!("Unable to open file {path:?}"));
@@ -361,7 +369,7 @@ impl Mesh {
                                         if let RenderCommand::Indexed { .. } = primitive {
                                             parser_state = ParserState::InIndicesTag { attributes };
                                         }
-                                        mesh_data.commands.push(primitive);
+                                        commands.push(primitive);
                                     }
                                 }
                             }
@@ -390,19 +398,17 @@ impl Mesh {
                     XmlEvent::Characters(data) => match parser_state {
                         ParserState::InAttributeTag { attributes } => {
                             let attribute = Attribute::new(&attributes, &data);
-                            let index = attribute.index;
                             attribs.push(attribute);
-                            attrib_index_map.insert(index, attribs.len() - 1);
                             parser_state = ParserState::Initial;
                         }
                         ParserState::InIndicesTag { attributes } => {
                             let data = IndexData::new(&attributes, &data);
-                            index_data.push(data);
+                            indices.push(data);
                             parser_state = ParserState::Initial;
                         }
                         _ => {}
                     },
-                    XmlEvent::EndElement { name } => {
+                    XmlEvent::EndElement { .. } => {
                         depth -= 1;
                     }
                     _ => {}
@@ -410,12 +416,24 @@ impl Mesh {
                 Err(err) => eprintln!("Error : {err}"),
             }
         }
+        ParsedData {
+            attribs,
+            indices_list: indices,
+            named_vao_list,
+            commands,
+        }
+    }
 
+    pub fn new(path: impl AsRef<Path>) -> Self {
+        let parsed_data = Self::parse_xml(path);
+
+        let mut mesh_data = MeshData::new();
+        mesh_data.commands = parsed_data.commands;
         // this is trying to calculate how much they need to allocate for attributes
         let mut attribute_buffer_size = 0;
-        let mut attribute_start_locs = Vec::with_capacity(attribs.len());
+        let mut attribute_start_locs = Vec::with_capacity(parsed_data.attribs.len());
         let mut num_elements = 0;
-        for attrib in &attribs {
+        for attrib in &parsed_data.attribs {
             attribute_buffer_size = if attribute_buffer_size % 16 != 0 {
                 // i hate the c++ code i took this from. WTF
                 // i guess it might be alignment?
@@ -444,7 +462,7 @@ impl Mesh {
             .attrib_array_buffer
             .reserve_data(attribute_buffer_size as GLsizeiptr, Usage::StaticDraw);
 
-        for (i, attrib) in attribs.iter().enumerate() {
+        for (i, attrib) in parsed_data.attribs.iter().enumerate() {
             let offset = attribute_start_locs[i];
             mesh_data
                 .attrib_array_buffer
@@ -453,18 +471,19 @@ impl Mesh {
         }
 
         // fill named vaos
-        for (name, source_list) in named_vao_list {
+        for (name, source_list) in parsed_data.named_vao_list {
             let mut vao = VertexArrayObject::new();
             vao.bind();
             for attrib in source_list {
-                let offset = attribs
+                let offset = parsed_data
+                    .attribs
                     .iter()
                     .position(|a| a.index == attrib)
                     .unwrap_or_else(|| {
                         panic!("could not find source index {attrib} for vao {name}")
                     });
 
-                attribs[offset].setup_attribute_array(&mut vao, offset as GLint);
+                parsed_data.attribs[offset].setup_attribute_array(&mut vao, offset as GLint);
             }
             mesh_data.named_vaos.insert(name, vao);
         }
@@ -472,8 +491,8 @@ impl Mesh {
 
         // calculate index buffer size
         let mut index_buffer_size = 0;
-        let mut index_start_locs = Vec::with_capacity(index_data.len());
-        for data in &index_data {
+        let mut index_start_locs = Vec::with_capacity(parsed_data.indices_list.len());
+        for data in &parsed_data.indices_list {
             index_buffer_size = if index_buffer_size % 16 != 0 {
                 index_buffer_size + (16 - index_buffer_size % 16)
             } else {
@@ -492,13 +511,14 @@ impl Mesh {
                 .reserve_data(index_buffer_size as GLsizeiptr, Usage::StaticDraw);
 
             // fill in data
-            for (i, data) in index_data.iter().enumerate() {
+            for (i, data) in parsed_data.indices_list.iter().enumerate() {
                 let offset = index_start_locs[i];
                 mesh_data
                     .index_buffer
                     .update_data(&data.data, offset as isize);
             }
             // fill in indexed rendering commands like said earlier
+            // TODO: possibly merge commands and indices in a render pass struct or something like that
             let mut i = 0;
             for commands in &mut mesh_data.commands {
                 if let RenderCommand::Indexed {
@@ -509,16 +529,419 @@ impl Mesh {
                 } = commands
                 {
                     *offset = index_start_locs[i];
-                    *count = index_data[i].data.len() as GLint;
-                    *index_size = index_data[i].data_type;
+                    *count = parsed_data.indices_list[i].data.len() as GLint;
+                    *index_size = parsed_data.indices_list[i].data_type;
                     i += 1;
                 }
             }
+
+            for vao in mesh_data.named_vaos.values_mut() {
+                vao.bind();
+                mesh_data.index_buffer.bind();
+            }
+            mesh_data.vao.unbind();
         }
 
         Self { mesh_data }
     }
-    pub fn render(&mut self) {}
-    pub fn render_mesh(&mut self, mesh_name: String) {}
-    pub fn delete_objects(&mut self) {}
+    pub fn render(&mut self, gl: &mut OpenGl) {
+        self.mesh_data.vao.bind();
+        for cmd in &self.mesh_data.commands {
+            cmd.render(gl);
+        }
+        self.mesh_data.vao.unbind();
+    }
+    pub fn render_mesh(&mut self, mesh_name: String, gl: &mut OpenGl) {
+        let Some((_, vao)) = self
+            .mesh_data
+            .named_vaos
+            .iter_mut()
+            .find(|(name, _)| **name == mesh_name)
+        else {
+            return;
+        };
+
+        vao.bind();
+        for cmd in &self.mesh_data.commands {
+            cmd.render(gl);
+        }
+        vao.unbind();
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::path::Path;
+
+    use gl::types::{GLuint, GLushort};
+
+    use crate::{
+        mesh::{AttributeData, RenderCommand},
+        opengl::{IndexSize, Primitive},
+        vertex_attributes::{DataType, VertexAttribute},
+    };
+
+    use super::{Attribute, IndexData, Mesh};
+    macro_rules! test_case {
+        ($fname:expr) => {
+            concat!(env!("CARGO_MANIFEST_DIR"), "/resources/test/", $fname) // assumes Linux ('/')!
+        };
+    }
+
+    fn test_attribute(
+        attribute: &Attribute,
+        index: GLuint,
+        vertex_attribute: VertexAttribute,
+        data: &[AttributeData],
+    ) {
+        assert_eq!(attribute.index, index);
+        assert_eq!(
+            attribute.vertex_attribute.data_type,
+            vertex_attribute.data_type
+        );
+        assert_eq!(
+            attribute.vertex_attribute.components,
+            vertex_attribute.components
+        );
+        assert_eq!(
+            attribute.vertex_attribute.normalized,
+            vertex_attribute.normalized
+        );
+        // testing attribute data
+        assert_eq!(attribute.data.len(), data.len());
+        if attribute.data.is_empty() {
+            return;
+        }
+        let first = attribute.data[0];
+        if let AttributeData::Float(_) = first {
+            // assume all values are float
+            for (i, attribute) in attribute.data.iter().enumerate() {
+                let a = match attribute {
+                    AttributeData::Float(a) => a,
+                    _ => panic!(),
+                };
+                let b = match data[i] {
+                    AttributeData::Float(b) => b,
+                    _ => panic!(),
+                };
+
+                assert!((a - b).abs() < f32::EPSILON, "{i}: {a} {b}");
+            }
+        } else {
+            // assume all values are integral
+            assert_eq!(attribute.data, data)
+        }
+    }
+
+    fn test_indices(indices: &IndexData, index_size: IndexSize, data: &[AttributeData]) {
+        assert_eq!(indices.data_type, index_size);
+        assert_eq!(indices.data, data);
+    }
+    fn test_named_vaos() {}
+
+    fn test_commands(cmd: &RenderCommand, expected_primitive: Primitive) {
+        if let RenderCommand::Indexed { primitive, .. } = cmd {
+            assert_eq!(*primitive, expected_primitive);
+            // all the other things are not known until the other calculations
+        } else {
+            panic!();
+        };
+    }
+    #[test]
+    fn test_plane_parse() {
+        let file_path = Path::new(test_case!("UnitPlane.xml"));
+
+        let parsed_xml = Mesh::parse_xml(file_path);
+
+        // testing attributes
+        assert_eq!(parsed_xml.attribs.len(), 1);
+        let attribute = &parsed_xml.attribs[0];
+        let data = [
+            0.5, 0.0, -0.5, 0.5, 0.0, 0.5, -0.5, 0.0, 0.5, -0.5, 0.0, -0.5,
+        ]
+        .iter()
+        .map(|n| AttributeData::Float(*n))
+        .collect::<Vec<_>>();
+
+        test_attribute(
+            attribute,
+            0,
+            VertexAttribute::new(3, DataType::Float, false),
+            &data,
+        );
+
+        // testing indices
+        assert_eq!(parsed_xml.indices_list.len(), 1);
+        let indices = &parsed_xml.indices_list[0];
+
+        let data = [0, 1, 2, 0, 2, 1, 2, 3, 0, 2, 0, 3]
+            .iter()
+            .map(|n: &GLushort| AttributeData::UnsignedShort(*n))
+            .collect::<Vec<_>>();
+
+        test_indices(indices, IndexSize::UnsignedShort, &data);
+
+        assert_eq!(parsed_xml.named_vao_list.len(), 0);
+
+        assert_eq!(parsed_xml.commands.len(), 1);
+        let cmd = &parsed_xml.commands[0];
+        test_commands(cmd, Primitive::Triangles);
+    }
+
+    #[test]
+    fn test_cube_parse() {
+        let file_path = Path::new(test_case!("UnitCube.xml"));
+
+        let parsed_xml = Mesh::parse_xml(file_path);
+
+        // testing attributes
+        assert_eq!(parsed_xml.attribs.len(), 1);
+        let attribute = &parsed_xml.attribs[0];
+
+        // testing attribute data
+        let data = [
+            0.5, 0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, 0.5, -0.5,
+            0.5, 0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, -0.5,
+            -0.5, 0.5, -0.5, 0.5, 0.5, 0.5, -0.5, -0.5, 0.5, -0.5, -0.5, -0.5, -0.5, 0.5, -0.5,
+            -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, 0.5, -0.5, 0.5,
+            0.5, -0.5, -0.5, 0.5, -0.5, -0.5, -0.5, -0.5, 0.5, -0.5,
+        ]
+        .map(AttributeData::Float);
+        test_attribute(
+            attribute,
+            0,
+            VertexAttribute::new(3, DataType::Float, false),
+            &data,
+        );
+
+        // testing indices
+        assert_eq!(parsed_xml.indices_list.len(), 1);
+        let indices = &parsed_xml.indices_list[0];
+        assert_eq!(indices.data_type, IndexSize::UnsignedShort);
+        let data: Vec<AttributeData> = [
+            0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4, 8, 9, 10, 10, 11, 8, 12, 13, 14, 14, 15, 12, 16,
+            17, 18, 18, 19, 16, 20, 21, 22, 22, 23, 20,
+        ]
+        .iter()
+        .map(|n: &GLushort| AttributeData::UnsignedShort(*n))
+        .collect();
+        test_indices(indices, IndexSize::UnsignedShort, &data);
+
+        assert_eq!(parsed_xml.named_vao_list.len(), 0);
+
+        assert_eq!(parsed_xml.commands.len(), 1);
+        let cmd = &parsed_xml.commands[0];
+        test_commands(cmd, Primitive::Triangles);
+    }
+
+    #[test]
+    fn test_cone_parse() {
+        let file_path = Path::new(test_case!("UnitCone.xml"));
+
+        let parsed_xml = Mesh::parse_xml(file_path);
+
+        // testing attributes
+        assert_eq!(parsed_xml.attribs.len(), 1);
+        let attribute = &parsed_xml.attribs[0];
+
+        // testing attribute data
+        #[allow(clippy::excessive_precision)]
+        let data = [
+            0.0,
+            0.866,
+            0.0,
+            0.5,
+            0.0,
+            0.0,
+            0.48907381875731,
+            0.0,
+            0.1039557588888,
+            0.45677280077542,
+            0.0,
+            0.20336815992623,
+            0.40450865316151,
+            0.0,
+            0.29389241146627,
+            0.33456556611288,
+            0.0,
+            0.37157217599218,
+            0.2500003830126,
+            0.0,
+            0.43301248075957,
+            0.15450900193016,
+            0.0,
+            0.47552809414644,
+            0.052264847412855,
+            0.0,
+            0.49726088296277,
+            -0.052263527886268,
+            0.0,
+            0.49726102165048,
+            -0.15450774007312,
+            0.0,
+            0.47552850414828,
+            -0.24999923397422,
+            0.0,
+            0.43301314415651,
+            -0.33456458011157,
+            0.0,
+            0.37157306379065,
+            -0.40450787329018,
+            0.0,
+            0.29389348486527,
+            -0.45677226111814,
+            0.0,
+            0.20336937201315,
+            -0.48907354289964,
+            0.0,
+            0.10395705668972,
+            -0.49999999999824,
+            0.0,
+            1.3267948966764e-006,
+            -0.48907409461153,
+            0.0,
+            -0.10395446108714,
+            -0.45677334042948,
+            0.0,
+            -0.20336694783787,
+            -0.40450943302999,
+            0.0,
+            -0.2938913380652,
+            -0.33456655211184,
+            0.0,
+            -0.3715712881911,
+            -0.25000153204922,
+            0.0,
+            -0.43301181735958,
+            -0.15451026378611,
+            0.0,
+            -0.47552768414126,
+            -0.052266166939075,
+            0.0,
+            -0.49726074427155,
+            0.052262208359312,
+            0.0,
+            -0.4972611603347,
+            0.15450647821499,
+            0.0,
+            -0.47552891414676,
+            0.24999808493408,
+            0.0,
+            -0.4330138075504,
+            0.3345635941079,
+            0.0,
+            -0.37157395158649,
+            0.40450709341601,
+            0.0,
+            -0.2938945582622,
+            0.45677172145764,
+            0.0,
+            -0.20337058409865,
+            0.48907326703854,
+            0.0,
+            -0.10395835448992,
+            0.0,
+            0.0,
+            0.0,
+        ]
+        .map(AttributeData::Float);
+
+        test_attribute(
+            attribute,
+            0,
+            VertexAttribute::new(3, DataType::Float, false),
+            &data,
+        );
+        // testing indices
+        assert_eq!(parsed_xml.indices_list.len(), 2);
+        let indices = &parsed_xml.indices_list[0];
+        assert_eq!(indices.data_type, IndexSize::UnsignedShort);
+        let data: Vec<AttributeData> = [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 1,
+        ]
+        .iter()
+        .map(|n: &GLushort| AttributeData::UnsignedShort(*n))
+        .collect();
+        test_indices(indices, IndexSize::UnsignedShort, &data);
+
+        let indices = &parsed_xml.indices_list[1];
+        let data: Vec<AttributeData> = [
+            31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10,
+            9, 8, 7, 6, 5, 4, 3, 2, 1, 30,
+        ]
+        .iter()
+        .map(|n: &GLushort| AttributeData::UnsignedShort(*n))
+        .collect();
+        test_indices(indices, IndexSize::UnsignedShort, &data);
+
+        assert_eq!(parsed_xml.named_vao_list.len(), 0);
+
+        assert_eq!(parsed_xml.commands.len(), 2);
+        let cmd = &parsed_xml.commands[0];
+        test_commands(cmd, Primitive::TriangleFan);
+        let cmd = &parsed_xml.commands[1];
+        test_commands(cmd, Primitive::TriangleFan);
+    }
+
+    #[test]
+    fn test_cube_color_parse() {
+        let file_path = Path::new(test_case!("UnitCubeColor.xml"));
+
+        let parsed_xml = Mesh::parse_xml(file_path);
+
+        // testing attributes
+        assert_eq!(parsed_xml.attribs.len(), 2);
+        let attribute = &parsed_xml.attribs[0];
+
+        let data = [
+            0.5, 0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, 0.5, -0.5,
+            0.5, 0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, -0.5,
+            -0.5, 0.5, -0.5, 0.5, 0.5, 0.5, -0.5, -0.5, 0.5, -0.5, -0.5, -0.5, -0.5, 0.5, -0.5,
+            -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, 0.5, -0.5, 0.5,
+            0.5, -0.5, -0.5, 0.5, -0.5, -0.5, -0.5, -0.5, 0.5, -0.5,
+        ]
+        .map(AttributeData::Float);
+        test_attribute(
+            attribute,
+            0,
+            VertexAttribute::new(3, DataType::Float, false),
+            &data,
+        );
+
+        let attribute = &parsed_xml.attribs[1];
+        let data = [
+            0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0,
+            0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0,
+            0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0,
+            1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0,
+            0.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0,
+            0.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0,
+        ]
+        .map(AttributeData::Float);
+        test_attribute(
+            attribute,
+            1,
+            VertexAttribute::new(4, DataType::Float, false),
+            &data,
+        );
+
+        // testing indices
+        assert_eq!(parsed_xml.indices_list.len(), 1);
+        let indices = &parsed_xml.indices_list[0];
+        let data: Vec<AttributeData> = [
+            0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4, 8, 9, 10, 10, 11, 8, 12, 13, 14, 14, 15, 12, 16,
+            17, 18, 18, 19, 16, 20, 21, 22, 22, 23, 20,
+        ]
+        .iter()
+        .map(|n: &GLushort| AttributeData::UnsignedShort(*n))
+        .collect();
+        test_indices(indices, IndexSize::UnsignedShort, &data);
+
+        assert_eq!(parsed_xml.named_vao_list.len(), 0);
+
+        assert_eq!(parsed_xml.commands.len(), 1);
+        let cmd = &parsed_xml.commands[0];
+        test_commands(cmd, Primitive::Triangles);
+    }
 }

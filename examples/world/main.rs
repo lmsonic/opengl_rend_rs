@@ -7,7 +7,7 @@ use glfw::{Action, Key, Modifiers, PWindow};
 use opengl_rend::app::{run_app, Application};
 use opengl_rend::buffer::{BufferType, Usage};
 use opengl_rend::opengl::{
-    Capability, ClearFlags, CullMode, DepthFunc, FrontFace, IndexSize, PolygonMode, Primitive,
+    Capability, ClearFlags, CullMode, DepthFunc, FrontFace, IndexSize, Primitive,
 };
 use opengl_rend::program::{GLLocation, Shader, ShaderType};
 use opengl_rend::vertex_attributes::{DataType, VertexAttribute};
@@ -317,15 +317,6 @@ impl Hierarchy {
             self.finger_open_ang -= Self::SMALL_ANGLE_INCREMENT;
         }
         self.finger_open_ang = self.finger_open_ang.clamp(9.0, 180.0);
-    }
-
-    fn write_angle(&self) {
-        dbg!(self.base_ang);
-        dbg!(self.upper_arm_ang);
-        dbg!(self.lower_arm_ang);
-        dbg!(self.wrist_roll_ang);
-        dbg!(self.wrist_pitch_ang);
-        dbg!(self.finger_open_ang);
     }
 
     fn set_transform(&mut self, transform: Transform) {
