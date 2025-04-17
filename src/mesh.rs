@@ -312,7 +312,7 @@ impl Mesh {
     fn parse_xml(path: impl AsRef<Path>) -> ParsedData {
         let mut attribs: Vec<Attribute> = Vec::with_capacity(16);
         // Map from Attribute indices to the indices in the attribs vector just created [0,16]
-        let mut indices: Vec<IndexData> = vec![];
+        let mut indices_list: Vec<IndexData> = vec![];
         let mut named_vao_list: Vec<(String, Vec<GLuint>)> = vec![];
         let mut commands: Vec<RenderCommand> = vec![];
 
@@ -323,9 +323,16 @@ impl Mesh {
         enum ParserState {
             Initial,
             JustPassedMeshRoot,
-            InAttributeTag { attributes: Vec<OwnedAttribute> },
-            InVaoTag { attributes: Vec<OwnedAttribute> },
-            InIndicesTag { attributes: Vec<OwnedAttribute> },
+            InAttributeTag {
+                attributes: Vec<OwnedAttribute>,
+            },
+            InVaoTag {
+                vao_attributes: Vec<OwnedAttribute>,
+                sources_attributes: Vec<OwnedAttribute>,
+            },
+            InIndicesTag {
+                attributes: Vec<OwnedAttribute>,
+            },
         }
 
         let mut parser_state = ParserState::Initial;
@@ -337,7 +344,9 @@ impl Mesh {
                 Ok(event) => match event {
                     XmlEvent::EndDocument => break,
                     XmlEvent::StartElement {
-                        name, attributes, ..
+                        name,
+                        mut attributes,
+                        ..
                     } => {
                         match depth {
                             0 => {
@@ -357,14 +366,20 @@ impl Mesh {
                                 }
                                 match name.as_str() {
                                     "attribute" => {
+                                        dbg!("attribute");
                                         parser_state = ParserState::InAttributeTag { attributes };
                                     }
                                     "vao" => {
-                                        parser_state = ParserState::InVaoTag { attributes };
+                                        dbg!("vao");
+                                        parser_state = ParserState::InVaoTag {
+                                            vao_attributes: attributes,
+                                            sources_attributes: vec![],
+                                        };
                                     }
 
                                     _ => {
                                         // assumes either arrays or indices i guess?
+                                        dbg!("indices");
                                         let primitive = RenderCommand::new(&name, &attributes);
                                         if let RenderCommand::Indexed { .. } = primitive {
                                             parser_state = ParserState::InIndicesTag { attributes };
@@ -375,20 +390,18 @@ impl Mesh {
                             }
                             2 => {
                                 if name.local_name == "source" {
+                                    dbg!("source");
                                     match parser_state {
                                         ParserState::InVaoTag {
-                                            attributes: vao_attributes,
+                                            ref mut sources_attributes,
+                                            ..
                                         } => {
-                                            // can only do it if we have both!
-                                            let (name, source_attribs) =
-                                                process_vao(&vao_attributes, &attributes);
-                                            named_vao_list.push((name, source_attribs));
-                                            parser_state = ParserState::Initial;
+                                            sources_attributes.append(&mut attributes);
                                         }
-                                        _ => panic!(
-                                            "source tag is only valid as a child of the vao tag"
-                                        ),
+                                        _ => panic!("source tag is only valid when in vao tag"),
                                     }
+                                } else {
+                                    panic!("this depth only allowed for source tags")
                                 }
                             }
                             _ => {}
@@ -397,18 +410,36 @@ impl Mesh {
                     }
                     XmlEvent::Characters(data) => match parser_state {
                         ParserState::InAttributeTag { attributes } => {
+                            dbg!("attribute data");
                             let attribute = Attribute::new(&attributes, &data);
                             attribs.push(attribute);
                             parser_state = ParserState::Initial;
                         }
                         ParserState::InIndicesTag { attributes } => {
+                            dbg!("indices data");
                             let data = IndexData::new(&attributes, &data);
-                            indices.push(data);
+                            indices_list.push(data);
                             parser_state = ParserState::Initial;
                         }
                         _ => {}
                     },
                     XmlEvent::EndElement { .. } => {
+                        // HACK: EndElement will trigger when source tag ends so we have to check for depth :\
+                        if depth < 2 {
+                            if let ParserState::InVaoTag {
+                                vao_attributes,
+                                sources_attributes,
+                            } = parser_state
+                            {
+                                dbg!("vao end");
+                                // can only do this at the end
+                                let (name, vaos) =
+                                    process_vao(&vao_attributes, &sources_attributes);
+                                named_vao_list.push((name, vaos));
+                                parser_state = ParserState::Initial;
+                            };
+                        }
+
                         depth -= 1;
                     }
                     _ => {}
@@ -418,7 +449,7 @@ impl Mesh {
         }
         ParsedData {
             attribs,
-            indices_list: indices,
+            indices_list,
             named_vao_list,
             commands,
         }
@@ -637,7 +668,7 @@ mod test {
         assert_eq!(indices.data_type, index_size);
         assert_eq!(indices.data, data);
     }
-    fn test_named_vaos() {}
+    fn test_named_vaos(named_vaos: &[(String, Vec<u32>)]) {}
 
     fn test_commands(cmd: &RenderCommand, expected_primitive: Primitive) {
         if let RenderCommand::Indexed { primitive, .. } = cmd {
@@ -659,9 +690,7 @@ mod test {
         let data = [
             0.5, 0.0, -0.5, 0.5, 0.0, 0.5, -0.5, 0.0, 0.5, -0.5, 0.0, -0.5,
         ]
-        .iter()
-        .map(|n| AttributeData::Float(*n))
-        .collect::<Vec<_>>();
+        .map(AttributeData::Float);
 
         test_attribute(
             attribute,
@@ -943,5 +972,247 @@ mod test {
         assert_eq!(parsed_xml.commands.len(), 1);
         let cmd = &parsed_xml.commands[0];
         test_commands(cmd, Primitive::Triangles);
+    }
+
+    #[test]
+    fn test_cone_color_parse() {
+        let file_path = Path::new(test_case!("UnitConeTint.xml"));
+
+        let parsed_xml = Mesh::parse_xml(file_path);
+
+        // testing attributes
+        assert_eq!(parsed_xml.attribs.len(), 2);
+        let attribute = &parsed_xml.attribs[0];
+
+        // testing attribute data
+        #[allow(clippy::excessive_precision)]
+        let data = [
+            0.0,
+            0.866,
+            0.0,
+            0.5,
+            0.0,
+            0.0,
+            0.48907381875731,
+            0.0,
+            0.1039557588888,
+            0.45677280077542,
+            0.0,
+            0.20336815992623,
+            0.40450865316151,
+            0.0,
+            0.29389241146627,
+            0.33456556611288,
+            0.0,
+            0.37157217599218,
+            0.2500003830126,
+            0.0,
+            0.43301248075957,
+            0.15450900193016,
+            0.0,
+            0.47552809414644,
+            0.052264847412855,
+            0.0,
+            0.49726088296277,
+            -0.052263527886268,
+            0.0,
+            0.49726102165048,
+            -0.15450774007312,
+            0.0,
+            0.47552850414828,
+            -0.24999923397422,
+            0.0,
+            0.43301314415651,
+            -0.33456458011157,
+            0.0,
+            0.37157306379065,
+            -0.40450787329018,
+            0.0,
+            0.29389348486527,
+            -0.45677226111814,
+            0.0,
+            0.20336937201315,
+            -0.48907354289964,
+            0.0,
+            0.10395705668972,
+            -0.49999999999824,
+            0.0,
+            1.3267948966764e-006,
+            -0.48907409461153,
+            0.0,
+            -0.10395446108714,
+            -0.45677334042948,
+            0.0,
+            -0.20336694783787,
+            -0.40450943302999,
+            0.0,
+            -0.2938913380652,
+            -0.33456655211184,
+            0.0,
+            -0.3715712881911,
+            -0.25000153204922,
+            0.0,
+            -0.43301181735958,
+            -0.15451026378611,
+            0.0,
+            -0.47552768414126,
+            -0.052266166939075,
+            0.0,
+            -0.49726074427155,
+            0.052262208359312,
+            0.0,
+            -0.4972611603347,
+            0.15450647821499,
+            0.0,
+            -0.47552891414676,
+            0.24999808493408,
+            0.0,
+            -0.4330138075504,
+            0.3345635941079,
+            0.0,
+            -0.37157395158649,
+            0.40450709341601,
+            0.0,
+            -0.2938945582622,
+            0.45677172145764,
+            0.0,
+            -0.20337058409865,
+            0.48907326703854,
+            0.0,
+            -0.10395835448992,
+            0.0,
+            0.0,
+            0.0,
+        ]
+        .map(AttributeData::Float);
+
+        test_attribute(
+            attribute,
+            0,
+            VertexAttribute::new(3, DataType::Float, false),
+            &data,
+        );
+        let attribute = &parsed_xml.attribs[1];
+        let data = [
+            1.0, 1.0, 1.0, 1.0, 0.9, 0.9, 0.9, 1.0, 0.82, 0.82, 0.82, 1.0, 0.74, 0.74, 0.74, 1.0,
+            0.66, 0.66, 0.66, 1.0, 0.58, 0.58, 0.58, 1.0, 0.5, 0.5, 0.5, 1.0, 0.58, 0.58, 0.58,
+            1.0, 0.66, 0.66, 0.66, 1.0, 0.74, 0.74, 0.74, 1.0, 0.82, 0.82, 0.82, 1.0, 0.9, 0.9,
+            0.9, 1.0, 0.82, 0.82, 0.82, 1.0, 0.74, 0.74, 0.74, 1.0, 0.66, 0.66, 0.66, 1.0, 0.58,
+            0.58, 0.58, 1.0, 0.5, 0.5, 0.5, 1.0, 0.58, 0.58, 0.58, 1.0, 0.66, 0.66, 0.66, 1.0,
+            0.74, 0.74, 0.74, 1.0, 0.82, 0.82, 0.82, 1.0, 0.9, 0.9, 0.9, 1.0, 0.82, 0.82, 0.82,
+            1.0, 0.74, 0.74, 0.74, 1.0, 0.66, 0.66, 0.66, 1.0, 0.58, 0.58, 0.58, 1.0, 0.5, 0.5,
+            0.5, 1.0, 0.58, 0.58, 0.58, 1.0, 0.66, 0.66, 0.66, 1.0, 0.74, 0.74, 0.74, 1.0, 0.82,
+            0.82, 0.82, 1.0, 0.9, 0.9, 0.9, 1.0,
+        ]
+        .map(AttributeData::Float);
+        test_attribute(
+            attribute,
+            1,
+            VertexAttribute::new(4, DataType::Float, false),
+            &data,
+        );
+        // testing indices
+        assert_eq!(parsed_xml.indices_list.len(), 2);
+        let indices = &parsed_xml.indices_list[0];
+        assert_eq!(indices.data_type, IndexSize::UnsignedShort);
+        let data: Vec<AttributeData> = [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 1,
+        ]
+        .iter()
+        .map(|n: &GLushort| AttributeData::UnsignedShort(*n))
+        .collect();
+        test_indices(indices, IndexSize::UnsignedShort, &data);
+
+        let indices = &parsed_xml.indices_list[1];
+        let data: Vec<AttributeData> = [
+            31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10,
+            9, 8, 7, 6, 5, 4, 3, 2, 1, 30,
+        ]
+        .iter()
+        .map(|n: &GLushort| AttributeData::UnsignedShort(*n))
+        .collect();
+        test_indices(indices, IndexSize::UnsignedShort, &data);
+
+        assert_eq!(parsed_xml.named_vao_list.len(), 0);
+
+        assert_eq!(parsed_xml.commands.len(), 2);
+        let cmd = &parsed_xml.commands[0];
+        test_commands(cmd, Primitive::TriangleFan);
+        let cmd = &parsed_xml.commands[1];
+        test_commands(cmd, Primitive::TriangleFan);
+    }
+    #[test]
+    fn test_cube_tint_parse() {
+        let file_path = Path::new(test_case!("UnitCubeTint.xml"));
+
+        let parsed_xml = Mesh::parse_xml(file_path);
+
+        // testing attributes
+        assert_eq!(parsed_xml.attribs.len(), 2);
+        let attribute = &parsed_xml.attribs[0];
+
+        let data = [
+            0.5, 0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, 0.5, -0.5,
+            0.5, 0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, -0.5,
+            -0.5, 0.5, -0.5, 0.5, 0.5, 0.5, -0.5, -0.5, 0.5, -0.5, -0.5, -0.5, -0.5, 0.5, -0.5,
+            -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, 0.5, -0.5, 0.5,
+            0.5, -0.5, -0.5, 0.5, -0.5, -0.5, -0.5, -0.5, 0.5, -0.5,
+        ]
+        .map(AttributeData::Float);
+        test_attribute(
+            attribute,
+            0,
+            VertexAttribute::new(3, DataType::Float, false),
+            &data,
+        );
+
+        let attribute = &parsed_xml.attribs[1];
+        let data = [
+            1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.75,
+            0.75, 0.75, 1.0, 0.75, 0.75, 0.75, 1.0, 0.75, 0.75, 0.75, 1.0, 0.75, 0.75, 0.75, 1.0,
+            0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0, 1.0,
+            1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.75, 0.75,
+            0.75, 1.0, 0.75, 0.75, 0.75, 1.0, 0.75, 0.75, 0.75, 1.0, 0.75, 0.75, 0.75, 1.0, 0.5,
+            0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0,
+        ]
+        .map(AttributeData::Float);
+        test_attribute(
+            attribute,
+            1,
+            VertexAttribute::new(4, DataType::Float, false),
+            &data,
+        );
+
+        // testing indices
+        assert_eq!(parsed_xml.indices_list.len(), 1);
+        let indices = &parsed_xml.indices_list[0];
+        let data: Vec<AttributeData> = [
+            0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4, 8, 9, 10, 10, 11, 8, 12, 13, 14, 14, 15, 12, 16,
+            17, 18, 18, 19, 16, 20, 21, 22, 22, 23, 20,
+        ]
+        .iter()
+        .map(|n: &GLushort| AttributeData::UnsignedShort(*n))
+        .collect();
+        test_indices(indices, IndexSize::UnsignedShort, &data);
+
+        assert_eq!(parsed_xml.named_vao_list.len(), 0);
+
+        assert_eq!(parsed_xml.commands.len(), 1);
+        let cmd = &parsed_xml.commands[0];
+        test_commands(cmd, Primitive::Triangles);
+    }
+    #[test]
+    fn test_sphere_vao() {
+        let file_path = Path::new(test_case!("UnitSphere.xml"));
+
+        let parsed_xml = Mesh::parse_xml(file_path);
+        let expected = [
+            ("lit-color", vec![0, 1, 2]),
+            ("lit", vec![0, 2]),
+            ("color", vec![0, 1]),
+            ("flat", vec![0]),
+        ];
+        test_named_vaos(&parsed_xml.named_vao_list);
     }
 }
