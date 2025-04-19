@@ -92,7 +92,6 @@ impl Application for App {
         gl.enable(Capability::CullFace);
         gl.cull_face(CullMode::Back);
         gl.front_face(FrontFace::CW);
-
         // gl.polygon_mode(PolygonMode::Line);
 
         // enable depth test

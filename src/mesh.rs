@@ -2,6 +2,7 @@ use std::{collections::HashMap, fs::File, io::BufReader, path::Path, str::FromSt
 
 use gl::types::{GLbyte, GLfloat, GLint, GLshort, GLsizeiptr, GLubyte, GLuint, GLushort};
 use glam::bool;
+use thiserror::Error;
 use xml::{attribute::OwnedAttribute, reader::XmlEvent, EventReader};
 
 use crate::{
@@ -9,6 +10,54 @@ use crate::{
     opengl::{IndexSize, OpenGl, Primitive},
     vertex_attributes::{DataType, VertexArrayObject, VertexAttribute},
 };
+type MeshResult<T> = Result<T, MeshError>;
+
+#[derive(Error, Debug)]
+enum MeshError {
+    #[error("Input error: {0}")]
+    IOError(#[from] std::io::Error),
+    #[error("Parsing int data error: {0}")]
+    ParseDataError(#[from] std::num::ParseIntError),
+    #[error("Parsing float data error: {0}")]
+    ParseFloatDataError(#[from] std::num::ParseFloatError),
+
+    #[error("Unimplemented data type {0:?}")]
+    UnimplementedDataFormat(DataType),
+    #[error("Unknown data type: {0}")]
+    UnknownDataType(String),
+    #[error("Non existing attribute searched: {0}")]
+    NonExistingAttribute(String),
+    #[error("Parsing attribute data error: {0}")]
+    ParseAttributeDataError(Box<dyn std::error::Error>),
+    #[error("Attribute index must be between 0 and 16, found: {0}")]
+    InvalidVertexAttributeLocation(GLuint),
+    #[error("Attribute size must be between 1 and 5, found: {0}")]
+    InvalidVertexAttributeSize(GLint),
+    #[error("Parsing bool 'integral' error: {0}")]
+    ParseBoolDataError(#[from] std::str::ParseBoolError),
+    #[error("Unknown primitive: {0}")]
+    UnknownPrimitive(String),
+    #[error("`array` 'start' index must be between 0 or greater ,found: {0}")]
+    InvalidArrayStart(GLint),
+    #[error("`array` 'count' must be between 0 or greater ,found: {0}")]
+    InvalidArrayCount(GLint),
+    #[error("Bad command element. Must be 'indices' or 'arrays' ,found: {0}")]
+    InvalidCommandAttribute(String),
+    #[error("Mesh root not found, file path:{0:?}")]
+    MeshRootNotFound(String),
+    #[error("Mesh has no vertex attributes, file path:{0:?}")]
+    NoVertexAttributes(String),
+    #[error("Source tags are only valid within vao tags, file path:{0:?}")]
+    SourceTagNotInVaoTag(String),
+    #[error("This attributes arrays has different size than others, index {0}  file path:{1:?}")]
+    VertexAttributesArrayWithDifferentSize(usize, String),
+    #[error("could not find source index {0} for vao {1}, file path {2}")]
+    VaoSourceInvalidIndex(u32, String, String),
+    #[error("cannot be both integral and normalized")]
+    IntegralNormalizedError,
+    #[error("cannot be both integral and floating point")]
+    IntegralFloatingError,
+}
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 enum AttributeData {
@@ -21,24 +70,24 @@ enum AttributeData {
     Byte(GLbyte),
 }
 
-fn parse_index_data(index_size: IndexSize, s: &str) -> Option<AttributeData> {
+fn parse_index_data(index_size: IndexSize, s: &str) -> MeshResult<AttributeData> {
     match index_size {
-        IndexSize::UnsignedByte => Some(AttributeData::UnsignedByte(s.parse::<GLubyte>().ok()?)),
-        IndexSize::UnsignedShort => Some(AttributeData::UnsignedShort(s.parse::<GLushort>().ok()?)),
-        IndexSize::UnsignedInt => Some(AttributeData::UnsignedInt(s.parse::<GLuint>().ok()?)),
+        IndexSize::UnsignedByte => Ok(AttributeData::UnsignedByte(s.parse::<GLubyte>()?)),
+        IndexSize::UnsignedShort => Ok(AttributeData::UnsignedShort(s.parse::<GLushort>()?)),
+        IndexSize::UnsignedInt => Ok(AttributeData::UnsignedInt(s.parse::<GLuint>()?)),
     }
 }
 
-fn parse_data(data_type: DataType, s: &str) -> Option<AttributeData> {
+fn parse_data(data_type: DataType, s: &str) -> MeshResult<AttributeData> {
     match data_type {
-        DataType::Byte => Some(AttributeData::Byte(s.parse::<GLbyte>().ok()?)),
-        DataType::UnsignedByte => Some(AttributeData::UnsignedByte(s.parse::<GLubyte>().ok()?)),
-        DataType::Short => Some(AttributeData::UnsignedShort(s.parse::<GLushort>().ok()?)),
-        DataType::UnsignedShort => Some(AttributeData::Short(s.parse::<GLshort>().ok()?)),
-        DataType::Int => Some(AttributeData::Int(s.parse::<GLint>().ok()?)),
-        DataType::UnsignedInt => Some(AttributeData::UnsignedInt(s.parse::<GLuint>().ok()?)),
-        DataType::Float => Some(AttributeData::Float(s.parse::<GLfloat>().ok()?)),
-        DataType::Double | DataType::Fixed => unimplemented!(),
+        DataType::Byte => Ok(AttributeData::Byte(s.parse::<GLbyte>()?)),
+        DataType::UnsignedByte => Ok(AttributeData::UnsignedByte(s.parse::<GLubyte>()?)),
+        DataType::Short => Ok(AttributeData::UnsignedShort(s.parse::<GLushort>()?)),
+        DataType::UnsignedShort => Ok(AttributeData::Short(s.parse::<GLshort>()?)),
+        DataType::Int => Ok(AttributeData::Int(s.parse::<GLint>()?)),
+        DataType::UnsignedInt => Ok(AttributeData::UnsignedInt(s.parse::<GLuint>()?)),
+        DataType::Float => Ok(AttributeData::Float(s.parse::<GLfloat>()?)),
+        DataType::Double | DataType::Fixed => Err(MeshError::UnimplementedDataFormat(data_type)),
     }
 }
 
@@ -48,85 +97,88 @@ struct Attribute {
     data: Vec<AttributeData>,
 }
 
-fn parse_data_type(s: &str) -> Option<(DataType, bool)> {
+fn parse_data_type(s: &str) -> MeshResult<(DataType, bool)> {
     match s {
-        "float" => Some((DataType::Float, false)),
-        "half" => Some((DataType::Fixed, false)),
-        "int" => Some((DataType::Int, false)),
-        "uint" => Some((DataType::UnsignedInt, false)),
-        "norm-int" => Some((DataType::Int, true)),
-        "norm-uint" => Some((DataType::UnsignedInt, true)),
-        "short" => Some((DataType::Short, false)),
-        "ushort" => Some((DataType::UnsignedShort, false)),
-        "norm-short" => Some((DataType::Short, true)),
-        "norm-ushort" => Some((DataType::UnsignedShort, true)),
-        "byte" => Some((DataType::Byte, false)),
-        "ubyte" => Some((DataType::UnsignedByte, false)),
-        "norm-byte" => Some((DataType::Byte, true)),
-        "norm-ubyte" => Some((DataType::UnsignedByte, true)),
-        _ => None,
+        "float" => Ok((DataType::Float, false)),
+        "half" => Ok((DataType::Fixed, false)),
+        "int" => Ok((DataType::Int, false)),
+        "uint" => Ok((DataType::UnsignedInt, false)),
+        "norm-int" => Ok((DataType::Int, true)),
+        "norm-uint" => Ok((DataType::UnsignedInt, true)),
+        "short" => Ok((DataType::Short, false)),
+        "ushort" => Ok((DataType::UnsignedShort, false)),
+        "norm-short" => Ok((DataType::Short, true)),
+        "norm-ushort" => Ok((DataType::UnsignedShort, true)),
+        "byte" => Ok((DataType::Byte, false)),
+        "ubyte" => Ok((DataType::UnsignedByte, false)),
+        "norm-byte" => Ok((DataType::Byte, true)),
+        "norm-ubyte" => Ok((DataType::UnsignedByte, true)),
+        _ => Err(MeshError::UnknownDataType(s.to_owned())),
     }
 }
 
-fn find_attribute(attributes: &[OwnedAttribute], name: &str) -> Option<String> {
-    attributes
+fn find_attribute(attributes: &[OwnedAttribute], name: &str) -> MeshResult<String> {
+    match attributes
         .iter()
         .find(|a| a.name.local_name == name)
         .map(|a| a.value.clone())
+    {
+        Some(attribute) => Ok(attribute),
+        None => Err(MeshError::NonExistingAttribute(name.to_owned())),
+    }
 }
 
-fn find_attribute_unwrap(attributes: &[OwnedAttribute], name: &str) -> String {
-    find_attribute(attributes, name)
-        .unwrap_or_else(|| panic!("Unable to find attribute with name {name}"))
-}
-
-fn find_attribute_parse_unwrap<T: FromStr>(attributes: &[OwnedAttribute], name: &str) -> T {
-    find_attribute_unwrap(attributes, name)
-        .parse::<T>()
-        .unwrap_or_else(|_| {
-            panic!(
-                "Unable to parse attribute with name {name} to {}",
-                stringify!(T)
-            )
-        })
+fn find_attribute_parse<T: FromStr>(
+    attributes: &[OwnedAttribute],
+    name: &str,
+) -> Result<T, MeshError>
+// this makes the compiler happy
+where
+    <T as std::str::FromStr>::Err: std::error::Error,
+    <T as std::str::FromStr>::Err: 'static,
+{
+    match find_attribute(attributes, name)?.parse::<T>() {
+        Ok(attribute) => Ok(attribute),
+        Err(e) => Err(MeshError::ParseAttributeDataError(Box::new(e))),
+    }
 }
 
 impl Attribute {
-    fn new(attributes: &[OwnedAttribute], string_data: &str) -> Self {
-        let index = find_attribute_parse_unwrap::<GLuint>(attributes, "index");
-        assert!(index <= 16, "Attribute index must be between 0 and 16.");
+    fn new(attributes: &[OwnedAttribute], string_data: &str) -> MeshResult<Self> {
+        let index = find_attribute_parse::<GLuint>(attributes, "index")?;
+        if index > 16 {
+            return Err(MeshError::InvalidVertexAttributeLocation(index));
+        }
 
-        let size = find_attribute_parse_unwrap::<GLint>(attributes, "size");
-        assert!(size >= 1, "Attribute size must be between 1 and 5.");
-        assert!(size <= 5, "Attribute size must be between 1 and 5.");
-
-        let data_type = find_attribute_unwrap(attributes, "type");
-        let (data_type, normalized) = parse_data_type(&data_type).expect("Unknown 'type' field.");
+        let size = find_attribute_parse::<GLint>(attributes, "size")?;
+        if !(0..=5).contains(&size) {
+            return Err(MeshError::InvalidVertexAttributeSize(size));
+        }
+        let data_type = find_attribute(attributes, "type")?;
+        let (data_type, normalized) = parse_data_type(&data_type)?;
 
         let integral = find_attribute(attributes, "integral");
-        if let Some(integral) = integral {
-            let is_integral = integral
-                .parse::<bool>()
-                .expect("Incorrect 'integral' value for the 'attribute'.");
+        if let Ok(integral) = integral {
+            let is_integral = integral.parse::<bool>()?;
             if normalized && is_integral {
-                panic!("cannot be both integral and normalized");
+                return Err(MeshError::IntegralNormalizedError);
             }
             if data_type.is_floating_point() && is_integral {
-                panic!("cannot be both integral and floating point");
+                return Err(MeshError::IntegralFloatingError);
             }
         }
         let vertex_attribute = VertexAttribute::new(size, data_type, normalized);
         // parse data
         let mut data = vec![];
         for word in string_data.split_whitespace() {
-            let value = parse_data(data_type, word).expect("Parse error in array data stream.");
+            let value = parse_data(data_type, word)?;
             data.push(value);
         }
-        Self {
+        Ok(Self {
             index,
             vertex_attribute,
             data,
-        }
+        })
     }
 
     fn num_elements(&self) -> usize {
@@ -144,18 +196,15 @@ impl Attribute {
 fn process_vao(
     vao_attributes: &[OwnedAttribute],
     source_attributes: &[OwnedAttribute],
-) -> (String, Vec<GLuint>) {
-    let name = find_attribute_unwrap(vao_attributes, "name");
+) -> MeshResult<(String, Vec<GLuint>)> {
+    let name = find_attribute(vao_attributes, "name")?;
     let mut attributes = vec![];
     for attrib in source_attributes {
         assert_eq!(attrib.name.local_name, "attrib");
-        let value = attrib
-            .value
-            .parse::<GLuint>()
-            .expect("VAO Attribute parse error");
+        let value = attrib.value.parse::<GLuint>()?;
         attributes.push(value);
     }
-    (name, attributes)
+    Ok((name, attributes))
 }
 
 struct IndicesData {
@@ -163,32 +212,30 @@ struct IndicesData {
     data: Vec<AttributeData>,
 }
 
-fn parse_index_type(s: &str) -> Option<(IndexSize, bool)> {
+fn parse_index_type(s: &str) -> MeshResult<(IndexSize, bool)> {
     match s {
-        "uint" => Some((IndexSize::UnsignedInt, false)),
-        "norm-uint" => Some((IndexSize::UnsignedInt, true)),
-        "ushort" => Some((IndexSize::UnsignedShort, false)),
-        "norm-ushort" => Some((IndexSize::UnsignedShort, true)),
-        "ubyte" => Some((IndexSize::UnsignedByte, false)),
-        "norm-ubyte" => Some((IndexSize::UnsignedByte, true)),
-        _ => None,
+        "uint" => Ok((IndexSize::UnsignedInt, false)),
+        "norm-uint" => Ok((IndexSize::UnsignedInt, true)),
+        "ushort" => Ok((IndexSize::UnsignedShort, false)),
+        "norm-ushort" => Ok((IndexSize::UnsignedShort, true)),
+        "ubyte" => Ok((IndexSize::UnsignedByte, false)),
+        "norm-ubyte" => Ok((IndexSize::UnsignedByte, true)),
+        _ => Err(MeshError::UnknownDataType(s.to_owned())),
     }
 }
 
 impl IndicesData {
-    fn new(attributes: &[OwnedAttribute], string_data: &str) -> Self {
-        let data_type = find_attribute_unwrap(attributes, "type");
-        let (data_type, _) = parse_index_type(&data_type)
-            .expect("Improper 'type' attribute value on 'index' element.");
+    fn new(attributes: &[OwnedAttribute], string_data: &str) -> MeshResult<Self> {
+        let data_type = find_attribute(attributes, "type")?;
+        let (data_type, _) = parse_index_type(&data_type)?;
 
         // parse data
         let mut data = vec![];
         for word in string_data.split_whitespace() {
-            let value =
-                parse_index_data(data_type, word).expect("Parse error in array data stream.");
+            let value = parse_index_data(data_type, word)?;
             data.push(value);
         }
-        Self { data_type, data }
+        Ok(Self { data_type, data })
     }
 
     fn byte_size(&self) -> usize {
@@ -211,51 +258,55 @@ enum RenderCommand {
     },
 }
 
-fn parse_primitive(s: &str) -> Option<Primitive> {
+fn parse_primitive(s: &str) -> MeshResult<Primitive> {
     match s {
-        "lines" => Some(Primitive::Lines),
-        "triangles" => Some(Primitive::Triangles),
-        "tri-strip" => Some(Primitive::TriangleStrip),
-        "tri-fan" => Some(Primitive::TriangleFan),
-        "line-strip" => Some(Primitive::LineStrip),
-        "line-loop" => Some(Primitive::LineLoop),
-        "points" => Some(Primitive::Points),
-        _ => None,
+        "lines" => Ok(Primitive::Lines),
+        "triangles" => Ok(Primitive::Triangles),
+        "tri-strip" => Ok(Primitive::TriangleStrip),
+        "tri-fan" => Ok(Primitive::TriangleFan),
+        "line-strip" => Ok(Primitive::LineStrip),
+        "line-loop" => Ok(Primitive::LineLoop),
+        "points" => Ok(Primitive::Points),
+        _ => Err(MeshError::UnknownPrimitive(s.to_owned())),
     }
 }
 
 impl RenderCommand {
-    fn new(name: &str, attributes: &[OwnedAttribute]) -> Self {
-        let primitive = find_attribute_unwrap(attributes, "cmd");
-        let primitive = parse_primitive(&primitive).expect("Unknown 'cmd' field.");
+    fn new(name: &str, attributes: &[OwnedAttribute]) -> MeshResult<Self> {
+        let primitive = find_attribute(attributes, "cmd")?;
+        let primitive = parse_primitive(&primitive)?;
         match name {
             "indices" => {
                 let primitive_restart = find_attribute(attributes, "prim-restart")
+                    .ok()
                     .and_then(|s| s.parse::<GLuint>().ok());
+
                 // count, index size, and offset will filled out lated
-                RenderCommand::Indexed {
+                Ok(RenderCommand::Indexed {
                     primitive,
                     primitive_restart,
                     count: 0,
                     index_size: IndexSize::UnsignedInt,
                     offset: 0,
-                }
+                })
             }
             "arrays" => {
-                let start = find_attribute_parse_unwrap::<GLint>(attributes, "start");
-                assert!(
-                    start >= 0,
-                    "`array` 'start' index must be between 0 or greater."
-                );
-                let end = find_attribute_parse_unwrap::<GLint>(attributes, "end");
-                assert!(end > 0, "`array` 'count' must be between 0 or greater.");
-                RenderCommand::Array {
+                let start = find_attribute_parse::<GLint>(attributes, "start")?;
+                if start < 0 {
+                    return Err(MeshError::InvalidArrayStart(start));
+                }
+
+                let end = find_attribute_parse::<GLint>(attributes, "end")?;
+                if end <= 0 {
+                    return Err(MeshError::InvalidArrayCount(end));
+                }
+                Ok(RenderCommand::Array {
                     primitive,
                     start,
                     end,
-                }
+                })
             }
-            _ => panic!("Bad command element {name} Must be 'indices' or 'arrays'."),
+            s => return Err(MeshError::InvalidCommandAttribute(s.to_owned())),
         }
     }
 
@@ -309,7 +360,7 @@ struct ParsedData {
 }
 
 impl Mesh {
-    fn parse_xml(path: impl AsRef<Path>) -> ParsedData {
+    fn parse_xml(path: impl AsRef<Path>) -> MeshResult<ParsedData> {
         let mut attribs: Vec<Attribute> = Vec::with_capacity(16);
         // Map from Attribute indices to the indices in the attribs vector just created [0,16]
         let mut indices_list: Vec<IndicesData> = vec![];
@@ -317,7 +368,8 @@ impl Mesh {
         let mut commands: Vec<RenderCommand> = vec![];
 
         let path = path.as_ref();
-        let file = File::open(path).unwrap_or_else(|_| panic!("Unable to open file {path:?}"));
+        let string_path = path.as_os_str().to_string_lossy().to_string();
+        let file = File::open(path)?;
         let file = BufReader::new(file);
         #[derive(PartialEq, Eq)]
         enum ParserState {
@@ -351,7 +403,7 @@ impl Mesh {
                         match depth {
                             0 => {
                                 if name.local_name != "mesh" {
-                                    panic!("`mesh` node not found in mesh file: {path:?}")
+                                    return Err(MeshError::MeshRootNotFound(string_path));
                                 }
                                 parser_state = ParserState::JustPassedMeshRoot;
                             }
@@ -360,7 +412,7 @@ impl Mesh {
                                 if parser_state == ParserState::JustPassedMeshRoot
                                     && name != "attribute"
                                 {
-                                    panic!("`mesh` node must have at least one `attribute` child. File: {path:?}")
+                                    return Err(MeshError::NoVertexAttributes(string_path));
                                 } else {
                                     parser_state = ParserState::Initial;
                                 }
@@ -380,7 +432,7 @@ impl Mesh {
                                     _ => {
                                         // assumes either arrays or indices i guess?
                                         dbg!("indices");
-                                        let primitive = RenderCommand::new(&name, &attributes);
+                                        let primitive = RenderCommand::new(&name, &attributes)?;
                                         if let RenderCommand::Indexed { .. } = primitive {
                                             parser_state = ParserState::InIndicesTag { attributes };
                                         }
@@ -390,7 +442,6 @@ impl Mesh {
                             }
                             2 => {
                                 if name.local_name == "source" {
-                                    dbg!("source");
                                     match parser_state {
                                         ParserState::InVaoTag {
                                             ref mut sources_attributes,
@@ -398,10 +449,12 @@ impl Mesh {
                                         } => {
                                             sources_attributes.append(&mut attributes);
                                         }
-                                        _ => panic!("source tag is only valid when in vao tag"),
+                                        _ => {
+                                            return Err(MeshError::SourceTagNotInVaoTag(
+                                                string_path,
+                                            ))
+                                        }
                                     }
-                                } else {
-                                    panic!("this depth only allowed for source tags")
                                 }
                             }
                             _ => {}
@@ -411,13 +464,13 @@ impl Mesh {
                     XmlEvent::Characters(data) => match parser_state {
                         ParserState::InAttributeTag { attributes } => {
                             dbg!("attribute data");
-                            let attribute = Attribute::new(&attributes, &data);
+                            let attribute = Attribute::new(&attributes, &data)?;
                             attribs.push(attribute);
                             parser_state = ParserState::Initial;
                         }
                         ParserState::InIndicesTag { attributes } => {
                             dbg!("indices data");
-                            let data = IndicesData::new(&attributes, &data);
+                            let data = IndicesData::new(&attributes, &data)?;
                             indices_list.push(data);
                             parser_state = ParserState::Initial;
                         }
@@ -434,7 +487,7 @@ impl Mesh {
                                 dbg!("vao end");
                                 // can only do this at the end
                                 let (name, vaos) =
-                                    process_vao(&vao_attributes, &sources_attributes);
+                                    process_vao(&vao_attributes, &sources_attributes)?;
                                 named_vao_list.push((name, vaos));
                                 dbg!(&named_vao_list);
                                 parser_state = ParserState::Initial;
@@ -448,16 +501,18 @@ impl Mesh {
                 Err(err) => eprintln!("Error : {err}"),
             }
         }
-        ParsedData {
+        Ok(ParsedData {
             attribs,
             indices_list,
             named_vao_list,
             commands,
-        }
+        })
     }
 
-    pub fn new(path: impl AsRef<Path>) -> Self {
-        let parsed_data = Self::parse_xml(path);
+    pub fn new(path: impl AsRef<Path>) -> MeshResult<Self> {
+        let string_path = path.as_ref().as_os_str().to_string_lossy().to_string();
+
+        let parsed_data = Self::parse_xml(path)?;
 
         let mut mesh_data = MeshData::new();
         mesh_data.commands = parsed_data.commands;
@@ -465,7 +520,7 @@ impl Mesh {
         let mut attribute_buffer_size = 0;
         let mut attribute_start_locs = Vec::with_capacity(parsed_data.attribs.len());
         let mut num_elements = 0;
-        for attrib in &parsed_data.attribs {
+        for (i, attrib) in parsed_data.attribs.iter().enumerate() {
             attribute_buffer_size = if attribute_buffer_size % 16 != 0 {
                 // i hate the c++ code i took this from. WTF
                 // i guess it might be alignment?
@@ -478,11 +533,12 @@ impl Mesh {
             attribute_buffer_size += attrib.byte_size();
 
             if num_elements != 0 {
-                assert_eq!(
-                    num_elements,
-                    attrib.num_elements(),
-                    "Some of the attribute arrays have different element counts."
-                )
+                if num_elements != attrib.num_elements() {
+                    return Err(MeshError::VertexAttributesArrayWithDifferentSize(
+                        i,
+                        string_path,
+                    ));
+                }
             } else {
                 num_elements = attrib.num_elements();
             }
@@ -507,13 +563,10 @@ impl Mesh {
             let mut vao = VertexArrayObject::new();
             vao.bind();
             for attrib in source_list {
-                let offset = parsed_data
-                    .attribs
-                    .iter()
-                    .position(|a| a.index == attrib)
-                    .unwrap_or_else(|| {
-                        panic!("could not find source index {attrib} for vao {name}")
-                    });
+                let Some(offset) = parsed_data.attribs.iter().position(|a| a.index == attrib)
+                else {
+                    return Err(MeshError::VaoSourceInvalidIndex(attrib, name, string_path));
+                };
 
                 parsed_data.attribs[offset].setup_attribute_array(&mut vao, offset as GLint);
             }
@@ -575,7 +628,7 @@ impl Mesh {
             mesh_data.vao.unbind();
         }
 
-        Self { mesh_data }
+        Ok(Self { mesh_data })
     }
     pub fn render(&mut self, gl: &mut OpenGl) {
         self.mesh_data.vao.bind();
@@ -690,7 +743,7 @@ mod test {
     fn test_plane_parse() {
         let file_path = Path::new(test_case!("UnitPlane.xml"));
 
-        let parsed_xml = Mesh::parse_xml(file_path);
+        let parsed_xml = Mesh::parse_xml(file_path).unwrap();
 
         // testing attributes
         assert_eq!(parsed_xml.attribs.len(), 1);
@@ -729,7 +782,7 @@ mod test {
     fn test_cube_parse() {
         let file_path = Path::new(test_case!("UnitCube.xml"));
 
-        let parsed_xml = Mesh::parse_xml(file_path);
+        let parsed_xml = Mesh::parse_xml(file_path).unwrap();
 
         // testing attributes
         assert_eq!(parsed_xml.attribs.len(), 1);
@@ -775,7 +828,7 @@ mod test {
     fn test_cone_parse() {
         let file_path = Path::new(test_case!("UnitCone.xml"));
 
-        let parsed_xml = Mesh::parse_xml(file_path);
+        let parsed_xml = Mesh::parse_xml(file_path).unwrap();
 
         // testing attributes
         assert_eq!(parsed_xml.attribs.len(), 1);
@@ -925,7 +978,7 @@ mod test {
     fn test_cube_color_parse() {
         let file_path = Path::new(test_case!("UnitCubeColor.xml"));
 
-        let parsed_xml = Mesh::parse_xml(file_path);
+        let parsed_xml = Mesh::parse_xml(file_path).unwrap();
 
         // testing attributes
         assert_eq!(parsed_xml.attribs.len(), 2);
@@ -986,7 +1039,7 @@ mod test {
     fn test_cone_color_parse() {
         let file_path = Path::new(test_case!("UnitConeTint.xml"));
 
-        let parsed_xml = Mesh::parse_xml(file_path);
+        let parsed_xml = Mesh::parse_xml(file_path).unwrap();
 
         // testing attributes
         assert_eq!(parsed_xml.attribs.len(), 2);
@@ -1154,7 +1207,7 @@ mod test {
     fn test_cube_tint_parse() {
         let file_path = Path::new(test_case!("UnitCubeTint.xml"));
 
-        let parsed_xml = Mesh::parse_xml(file_path);
+        let parsed_xml = Mesh::parse_xml(file_path).unwrap();
 
         // testing attributes
         assert_eq!(parsed_xml.attribs.len(), 2);
@@ -1214,7 +1267,7 @@ mod test {
     fn test_sphere_vao() {
         let file_path = Path::new(test_case!("UnitSphere.xml"));
 
-        let parsed_xml = Mesh::parse_xml(file_path);
+        let parsed_xml = Mesh::parse_xml(file_path).unwrap();
         let expected = [
             ("lit-color", vec![0, 1, 2]),
             ("lit", vec![0, 2]),
