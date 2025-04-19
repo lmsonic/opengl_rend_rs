@@ -158,7 +158,7 @@ fn process_vao(
     (name, attributes)
 }
 
-struct IndexData {
+struct IndicesData {
     data_type: IndexSize,
     data: Vec<AttributeData>,
 }
@@ -175,7 +175,7 @@ fn parse_index_type(s: &str) -> Option<(IndexSize, bool)> {
     }
 }
 
-impl IndexData {
+impl IndicesData {
     fn new(attributes: &[OwnedAttribute], string_data: &str) -> Self {
         let data_type = find_attribute_unwrap(attributes, "type");
         let (data_type, _) = parse_index_type(&data_type)
@@ -303,7 +303,7 @@ pub struct Mesh {
 
 struct ParsedData {
     attribs: Vec<Attribute>,
-    indices_list: Vec<IndexData>,
+    indices_list: Vec<IndicesData>,
     named_vao_list: Vec<(String, Vec<GLuint>)>,
     commands: Vec<RenderCommand>,
 }
@@ -312,7 +312,7 @@ impl Mesh {
     fn parse_xml(path: impl AsRef<Path>) -> ParsedData {
         let mut attribs: Vec<Attribute> = Vec::with_capacity(16);
         // Map from Attribute indices to the indices in the attribs vector just created [0,16]
-        let mut indices_list: Vec<IndexData> = vec![];
+        let mut indices_list: Vec<IndicesData> = vec![];
         let mut named_vao_list: Vec<(String, Vec<GLuint>)> = vec![];
         let mut commands: Vec<RenderCommand> = vec![];
 
@@ -417,7 +417,7 @@ impl Mesh {
                         }
                         ParserState::InIndicesTag { attributes } => {
                             dbg!("indices data");
-                            let data = IndexData::new(&attributes, &data);
+                            let data = IndicesData::new(&attributes, &data);
                             indices_list.push(data);
                             parser_state = ParserState::Initial;
                         }
@@ -425,7 +425,7 @@ impl Mesh {
                     },
                     XmlEvent::EndElement { .. } => {
                         // HACK: EndElement will trigger when source tag ends so we have to check for depth :\
-                        if depth < 2 {
+                        if depth <= 2 {
                             if let ParserState::InVaoTag {
                                 vao_attributes,
                                 sources_attributes,
@@ -436,6 +436,7 @@ impl Mesh {
                                 let (name, vaos) =
                                     process_vao(&vao_attributes, &sources_attributes);
                                 named_vao_list.push((name, vaos));
+                                dbg!(&named_vao_list);
                                 parser_state = ParserState::Initial;
                             };
                         }
@@ -612,7 +613,7 @@ mod test {
         vertex_attributes::{DataType, VertexAttribute},
     };
 
-    use super::{Attribute, IndexData, Mesh};
+    use super::{Attribute, IndicesData, Mesh};
     macro_rules! test_case {
         ($fname:expr) => {
             concat!(env!("CARGO_MANIFEST_DIR"), "/resources/test/", $fname) // assumes Linux ('/')!
@@ -664,11 +665,17 @@ mod test {
         }
     }
 
-    fn test_indices(indices: &IndexData, index_size: IndexSize, data: &[AttributeData]) {
+    fn test_indices(indices: &IndicesData, index_size: IndexSize, data: &[AttributeData]) {
         assert_eq!(indices.data_type, index_size);
         assert_eq!(indices.data, data);
     }
-    fn test_named_vaos(named_vaos: &[(String, Vec<u32>)]) {}
+    fn test_named_vaos(named_vaos: &[(String, Vec<u32>)], expected: &[(&str, Vec<u32>)]) {
+        assert_eq!(named_vaos.len(), expected.len());
+        for (i, (name, vao)) in named_vaos.iter().enumerate() {
+            assert_eq!(name, expected[i].0);
+            assert_eq!(*vao, expected[i].1);
+        }
+    }
 
     fn test_commands(cmd: &RenderCommand, expected_primitive: Primitive) {
         if let RenderCommand::Indexed { primitive, .. } = cmd {
@@ -1213,6 +1220,6 @@ mod test {
             ("color", vec![0, 1]),
             ("flat", vec![0]),
         ];
-        test_named_vaos(&parsed_xml.named_vao_list);
+        test_named_vaos(&parsed_xml.named_vao_list, &expected);
     }
 }
