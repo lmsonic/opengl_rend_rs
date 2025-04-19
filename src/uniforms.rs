@@ -4,7 +4,7 @@ use glam::{Vec2, Vec3, Vec4};
 mod private {
     pub trait Sealed {}
 }
-pub trait SetUniform: private::Sealed {
+pub(crate) trait SetUniform: private::Sealed {
     fn set_uniform(&self, location: GLint);
 }
 

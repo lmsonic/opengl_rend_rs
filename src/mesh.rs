@@ -235,10 +235,10 @@ impl RenderCommand {
                 // count, index size, and offset will filled out lated
                 RenderCommand::Indexed {
                     primitive,
+                    primitive_restart,
                     count: 0,
                     index_size: IndexSize::UnsignedInt,
                     offset: 0,
-                    primitive_restart,
                 }
             }
             "arrays" => {
@@ -551,6 +551,7 @@ impl Mesh {
             }
             // fill in indexed rendering commands like said earlier
             // TODO: possibly merge commands and indices in a render pass struct or something like that
+            // How to deal with arrays commands thou?
             let mut i = 0;
             for commands in &mut mesh_data.commands {
                 if let RenderCommand::Indexed {
