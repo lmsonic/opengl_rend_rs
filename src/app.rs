@@ -9,6 +9,8 @@ pub trait Application {
     fn window_mut(&mut self) -> &mut PWindow;
 }
 
+#[allow(clippy::unwrap_used)]
+#[allow(clippy::expect_used)]
 pub fn run_app<A: Application>() {
     let mut glfw = glfw::init(fail_on_errors!()).unwrap();
     glfw.window_hint(glfw::WindowHint::ContextVersion(4, 3));

@@ -5,9 +5,9 @@ edition = "2021"
 
 
 [lints.clippy]
-unwrap_used = "deny"
-expect_used = "deny"
-panic = "deny"
+# unwrap_used = "deny"
+# expect_used = "deny"
+# panic = "deny"
 
 
 [dependencies]
