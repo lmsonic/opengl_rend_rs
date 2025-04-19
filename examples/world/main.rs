@@ -6,6 +6,7 @@ use glam::{Mat4, Vec3};
 use glfw::{Action, Key, Modifiers, PWindow};
 use opengl_rend::app::{run_app, Application};
 use opengl_rend::matrix_stack::MatrixStack;
+use opengl_rend::mesh::Mesh;
 use opengl_rend::opengl::{Capability, ClearFlags, CullMode, DepthFunc, FrontFace};
 use opengl_rend::program::{GLLocation, Shader, ShaderType};
 use opengl_rend::{opengl::OpenGl, program::Program};
@@ -99,6 +100,12 @@ impl Application for App {
         gl.set_depth_mask(true);
         gl.depth_func(DepthFunc::LessEqual);
         gl.depth_range(0.0, 1.0);
+
+        let cone_mesh = Mesh::new("meshes/UnitConeTint.xml").unwrap();
+        let cylinder_mesh = Mesh::new("meshes/UnitCylinderTint.xml").unwrap();
+        let cube_color_mesh = Mesh::new("meshes/UnitCubeColor.xml").unwrap();
+        let cube_tint_mesh = Mesh::new("meshes/UnitCubeTint.xml").unwrap();
+        let plane_mesh = Mesh::new("meshes/UnitPlane.xml").unwrap();
 
         Self {
             gl,

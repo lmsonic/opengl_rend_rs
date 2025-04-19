@@ -13,7 +13,7 @@ use crate::{
 type MeshResult<T> = Result<T, MeshError>;
 
 #[derive(Error, Debug)]
-enum MeshError {
+pub enum MeshError {
     #[error("Input error: {0}")]
     IOError(#[from] std::io::Error),
     #[error("Parsing int data error: {0}")]
