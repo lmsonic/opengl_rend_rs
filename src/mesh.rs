@@ -90,7 +90,6 @@ fn parse_data(data_type: DataType, s: &str) -> MeshResult<AttributeData> {
         DataType::Double | DataType::Fixed => Err(MeshError::UnimplementedDataFormat(data_type)),
     }
 }
-
 struct Attribute {
     index: GLuint,
     vertex_attribute: VertexAttribute,
@@ -142,7 +141,6 @@ where
         Err(e) => Err(MeshError::ParseAttributeDataError(Box::new(e))),
     }
 }
-
 impl Attribute {
     fn new(attributes: &[OwnedAttribute], string_data: &str) -> MeshResult<Self> {
         let index = find_attribute_parse::<GLuint>(attributes, "index")?;
@@ -182,7 +180,7 @@ impl Attribute {
     }
 
     fn num_elements(&self) -> usize {
-        self.data.len() * self.vertex_attribute.components as usize
+        self.data.len() / self.vertex_attribute.components as usize
     }
     fn byte_size(&self) -> usize {
         self.data.len() * self.vertex_attribute.data_type.size()
@@ -242,7 +240,7 @@ impl IndicesData {
         self.data.len() * self.data_type.size()
     }
 }
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 enum RenderCommand {
     Indexed {
         primitive: Primitive,
@@ -306,7 +304,7 @@ impl RenderCommand {
                     end,
                 })
             }
-            s => return Err(MeshError::InvalidCommandAttribute(s.to_owned())),
+            s => Err(MeshError::InvalidCommandAttribute(s.to_owned())),
         }
     }
 
@@ -357,6 +355,20 @@ struct ParsedData {
     indices_list: Vec<IndicesData>,
     named_vao_list: Vec<(String, Vec<GLuint>)>,
     commands: Vec<RenderCommand>,
+}
+
+fn convert_to_raw_data(data: &[AttributeData]) -> Vec<u32> {
+    data.iter()
+        .map(|a| match *a {
+            AttributeData::Float(f) => bytemuck::cast(f),
+            AttributeData::UnsignedInt(i) => i,
+            AttributeData::Int(i) => bytemuck::cast(i),
+            AttributeData::UnsignedShort(i) => u32::from(i),
+            AttributeData::Short(i) => u32::from(bytemuck::cast::<GLshort, GLushort>(i)),
+            AttributeData::UnsignedByte(i) => u32::from(i),
+            AttributeData::Byte(i) => u32::from(bytemuck::cast::<GLbyte, GLubyte>(i)),
+        })
+        .collect::<Vec<u32>>()
 }
 
 impl Mesh {
@@ -418,11 +430,9 @@ impl Mesh {
                                 }
                                 match name.as_str() {
                                     "attribute" => {
-                                        dbg!("attribute");
                                         parser_state = ParserState::InAttributeTag { attributes };
                                     }
                                     "vao" => {
-                                        dbg!("vao");
                                         parser_state = ParserState::InVaoTag {
                                             vao_attributes: attributes,
                                             sources_attributes: vec![],
@@ -431,7 +441,6 @@ impl Mesh {
 
                                     _ => {
                                         // assumes either arrays or indices i guess?
-                                        dbg!("indices");
                                         let primitive = RenderCommand::new(&name, &attributes)?;
                                         if let RenderCommand::Indexed { .. } = primitive {
                                             parser_state = ParserState::InIndicesTag { attributes };
@@ -463,13 +472,11 @@ impl Mesh {
                     }
                     XmlEvent::Characters(data) => match parser_state {
                         ParserState::InAttributeTag { attributes } => {
-                            dbg!("attribute data");
                             let attribute = Attribute::new(&attributes, &data)?;
                             attribs.push(attribute);
                             parser_state = ParserState::Initial;
                         }
                         ParserState::InIndicesTag { attributes } => {
-                            dbg!("indices data");
                             let data = IndicesData::new(&attributes, &data)?;
                             indices_list.push(data);
                             parser_state = ParserState::Initial;
@@ -484,12 +491,10 @@ impl Mesh {
                                 sources_attributes,
                             } = parser_state
                             {
-                                dbg!("vao end");
                                 // can only do this at the end
                                 let (name, vaos) =
                                     process_vao(&vao_attributes, &sources_attributes)?;
                                 named_vao_list.push((name, vaos));
-                                dbg!(&named_vao_list);
                                 parser_state = ParserState::Initial;
                             };
                         }
@@ -516,11 +521,25 @@ impl Mesh {
 
         let mut mesh_data = MeshData::new();
         mesh_data.commands = parsed_data.commands;
+
+        // checking if vertex attributes have all same sizes
+        let mut num_elements = 0;
+        for (i, attrib) in parsed_data.attribs.iter().enumerate() {
+            if i == 0 {
+                num_elements = attrib.num_elements();
+            }
+            if attrib.num_elements() != num_elements {
+                return Err(MeshError::VertexAttributesArrayWithDifferentSize(
+                    i,
+                    string_path,
+                ));
+            }
+        }
+
         // this is trying to calculate how much they need to allocate for attributes
         let mut attribute_buffer_size = 0;
         let mut attribute_start_locs = Vec::with_capacity(parsed_data.attribs.len());
-        let mut num_elements = 0;
-        for (i, attrib) in parsed_data.attribs.iter().enumerate() {
+        for attrib in parsed_data.attribs.iter() {
             attribute_buffer_size = if attribute_buffer_size % 16 != 0 {
                 // i hate the c++ code i took this from. WTF
                 // i guess it might be alignment?
@@ -529,19 +548,7 @@ impl Mesh {
                 attribute_buffer_size
             };
             attribute_start_locs.push(attribute_buffer_size);
-
             attribute_buffer_size += attrib.byte_size();
-
-            if num_elements != 0 {
-                if num_elements != attrib.num_elements() {
-                    return Err(MeshError::VertexAttributesArrayWithDifferentSize(
-                        i,
-                        string_path,
-                    ));
-                }
-            } else {
-                num_elements = attrib.num_elements();
-            }
         }
 
         mesh_data.vao.bind();
@@ -552,9 +559,11 @@ impl Mesh {
 
         for (i, attrib) in parsed_data.attribs.iter().enumerate() {
             let offset = attribute_start_locs[i];
-            mesh_data
-                .attrib_array_buffer
-                .update_data(&attrib.data, offset as isize);
+            mesh_data.attrib_array_buffer.update_data_custom_size(
+                &attrib.data,
+                attrib.byte_size() as isize,
+                offset as isize,
+            );
             attrib.setup_attribute_array(&mut mesh_data.vao, offset as GLint);
         }
 
@@ -585,6 +594,7 @@ impl Mesh {
             };
             index_start_locs.push(index_buffer_size);
             index_buffer_size += data.byte_size();
+            dbg!(index_buffer_size);
         }
 
         // create index buffer
@@ -598,9 +608,11 @@ impl Mesh {
             // fill in data
             for (i, data) in parsed_data.indices_list.iter().enumerate() {
                 let offset = index_start_locs[i];
-                mesh_data
-                    .index_buffer
-                    .update_data(&data.data, offset as isize);
+                mesh_data.index_buffer.update_data_custom_size(
+                    &data.data,
+                    data.byte_size() as isize,
+                    offset as isize,
+                );
             }
             // fill in indexed rendering commands like said earlier
             // TODO: possibly merge commands and indices in a render pass struct or something like that
@@ -617,6 +629,7 @@ impl Mesh {
                     *offset = index_start_locs[i];
                     *count = parsed_data.indices_list[i].data.len() as GLint;
                     *index_size = parsed_data.indices_list[i].data_type;
+
                     i += 1;
                 }
             }

@@ -7,7 +7,7 @@ use glfw::{Action, Key, Modifiers, PWindow};
 use opengl_rend::app::{run_app, Application};
 use opengl_rend::matrix_stack::MatrixStack;
 use opengl_rend::mesh::Mesh;
-use opengl_rend::opengl::{Capability, ClearFlags, CullMode, DepthFunc, FrontFace};
+use opengl_rend::opengl::{Capability, ClearFlags, CullMode, DepthFunc, FrontFace, PolygonMode};
 use opengl_rend::program::{GLLocation, Shader, ShaderType};
 use opengl_rend::{opengl::OpenGl, program::Program};
 
@@ -44,6 +44,7 @@ struct App {
     matrix_stack: MatrixStack,
     camera_target: Vec3,
     camera_spherical_coords: Vec3,
+    plane_mesh: Mesh,
 }
 
 fn set_camera_matrix(data: &mut ProgramData, matrix: Mat4) {
@@ -93,7 +94,7 @@ impl Application for App {
         gl.enable(Capability::CullFace);
         gl.cull_face(CullMode::Back);
         gl.front_face(FrontFace::CW);
-        // gl.polygon_mode(PolygonMode::Line);
+        gl.polygon_mode(PolygonMode::Line);
 
         // enable depth test
         gl.enable(Capability::DepthTest);
@@ -101,11 +102,11 @@ impl Application for App {
         gl.depth_func(DepthFunc::LessEqual);
         gl.depth_range(0.0, 1.0);
 
-        let cone_mesh = Mesh::new("meshes/UnitConeTint.xml").unwrap();
-        let cylinder_mesh = Mesh::new("meshes/UnitCylinderTint.xml").unwrap();
-        let cube_color_mesh = Mesh::new("meshes/UnitCubeColor.xml").unwrap();
-        let cube_tint_mesh = Mesh::new("meshes/UnitCubeTint.xml").unwrap();
-        let plane_mesh = Mesh::new("meshes/UnitPlane.xml").unwrap();
+        // let cone_mesh = Mesh::new("examples/world/meshes/UnitConeTint.xml").unwrap();
+        // let cylinder_mesh = Mesh::new("examples/world/meshes/UnitCylinderTint.xml").unwrap();
+        // let cube_color_mesh = Mesh::new("examples/world/meshes/UnitCubeColor.xml").unwrap();
+        // let cube_tint_mesh = Mesh::new("examples/world/meshes/UnitCubeTint.xml").unwrap();
+        let plane_mesh = Mesh::new("examples/world/meshes/UnitPlane.xml").unwrap();
 
         Self {
             gl,
@@ -116,26 +117,63 @@ impl Application for App {
             camera_target: Vec3::new(0.0, 0.4, 0.0),
             matrix_stack: MatrixStack::new(),
             camera_spherical_coords: Vec3::new(67.5, -46.0, 150.0),
+            plane_mesh,
         }
     }
 
     fn display(&mut self) {
-        self.gl.clear_color(0.1, 0.1, 0.1, 0.0);
+        self.gl.clear_color(0.2, 0.2, 0.2, 0.0);
         self.gl.clear_depth(1.0);
         self.gl.clear(ClearFlags::Color | ClearFlags::Depth);
 
         // Draw
-
         let camera_position = self.calculate_camera_pos();
         let look_at = Mat4::look_at_rh(camera_position, self.camera_target, Vec3::Y);
+        dbg!(camera_position);
+        dbg!(self.camera_target);
         self.set_camera_matrices(look_at);
+
+        // Draw ground
+        let matrix = Mat4::from_scale(Vec3::new(100.0, 1.0, 100.0));
+        let program_data = &mut self.uniform_color;
+        program_data.program.set_used();
+        program_data
+            .program
+            .set_uniform(program_data.model_to_world_matrix_uniform, matrix);
+        program_data
+            .program
+            .set_uniform(program_data.base_color_uniform, (0.302, 0.416, 0.0589, 1.0));
+        self.plane_mesh.render(&mut self.gl);
+        program_data.program.set_unused();
     }
 
-    fn keyboard(&mut self, key: Key, action: Action, _modifier: Modifiers) {
+    fn keyboard(&mut self, key: Key, action: Action, modifier: Modifiers) {
+        let modifier = if modifier.contains(Modifiers::Shift) {
+            0.1
+        } else {
+            1.0
+        };
         if action == Action::Press || action == Action::Repeat {
             match key {
+                Key::E => self.camera_target.y -= 4.0 * modifier,
+                Key::Q => self.camera_target.y += 4.0 * modifier,
+                Key::A => self.camera_target.x -= 4.0 * modifier,
+                Key::D => self.camera_target.x += 4.0 * modifier,
+                Key::W => self.camera_target.z -= 4.0 * modifier,
+                Key::S => self.camera_target.z += 4.0 * modifier,
+
+                Key::J => self.camera_spherical_coords.x -= 11.0 * modifier,
+                Key::L => self.camera_spherical_coords.x += 11.0 * modifier,
+                Key::I => self.camera_spherical_coords.y -= 11.0 * modifier,
+                Key::K => self.camera_spherical_coords.y += 11.0 * modifier,
+                Key::O => self.camera_spherical_coords.z -= 5.0 * modifier,
+                Key::U => self.camera_spherical_coords.z += 5.0 * modifier,
+
                 _ => {}
             }
+            self.camera_spherical_coords.y = self.camera_spherical_coords.y.clamp(-78.75, -1.0);
+            self.camera_spherical_coords.z = self.camera_spherical_coords.z.min(5.0);
+            self.camera_target.y = self.camera_target.y.min(0.0);
         }
     }
 

@@ -12,6 +12,7 @@ edition = "2021"
 
 [dependencies]
 bitflags = "2.9.0"
+bytemuck = "1.22.0"
 gl = "0.14.0"
 glam = "0.30.1"
 glfw = "0.59.0"

@@ -83,11 +83,25 @@ impl<T> Buffer<T> {
         };
     }
     pub fn update_data(&mut self, data: &[T], offset: GLintptr) {
+        dbg!(std::mem::size_of_val(data));
+        dbg!(std::mem::size_of::<T>());
+
         unsafe {
             gl::BufferSubData(
                 self.target as GLenum,
                 offset,
                 std::mem::size_of_val(data) as isize,
+                data.as_ptr() as *const _,
+            )
+        };
+    }
+
+    pub fn update_data_custom_size(&mut self, data: &[T], size: isize, offset: GLintptr) {
+        unsafe {
+            gl::BufferSubData(
+                self.target as GLenum,
+                offset,
+                size,
                 data.as_ptr() as *const _,
             )
         };
