@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs::File, io::BufReader, path::Path, str::FromStr};
+use std::{collections::HashMap, fs::File, io::BufReader, ops::Deref, path::Path, str::FromStr};
 
 use gl::types::{GLbyte, GLfloat, GLint, GLshort, GLsizeiptr, GLubyte, GLuint, GLushort};
 use glam::bool;
@@ -59,41 +59,173 @@ pub enum MeshError {
     IntegralFloatingError,
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
-enum AttributeData {
-    Float(GLfloat),
-    UnsignedInt(GLuint),
-    Int(GLint),
-    UnsignedShort(GLushort),
-    Short(GLshort),
-    UnsignedByte(GLubyte),
-    Byte(GLbyte),
+#[derive(Debug, PartialEq)]
+enum VertexAttributeValues {
+    Float(Vec<GLfloat>),
+    UnsignedInt(Vec<GLuint>),
+    Int(Vec<GLint>),
+    UnsignedShort(Vec<GLushort>),
+    Short(Vec<GLshort>),
+    UnsignedByte(Vec<GLubyte>),
+    Byte(Vec<GLbyte>),
 }
 
-fn parse_index_data(index_size: IndexSize, s: &str) -> MeshResult<AttributeData> {
-    match index_size {
-        IndexSize::UnsignedByte => Ok(AttributeData::UnsignedByte(s.parse::<GLubyte>()?)),
-        IndexSize::UnsignedShort => Ok(AttributeData::UnsignedShort(s.parse::<GLushort>()?)),
-        IndexSize::UnsignedInt => Ok(AttributeData::UnsignedInt(s.parse::<GLuint>()?)),
+impl VertexAttributeValues {
+    fn parse_add(&mut self, word: &str) -> MeshResult<()> {
+        match self {
+            Self::Float(items) => {
+                items.push(word.parse::<GLfloat>()?);
+                Ok(())
+            }
+            Self::UnsignedInt(items) => {
+                items.push(word.parse::<GLuint>()?);
+                Ok(())
+            }
+            Self::Int(items) => {
+                items.push(word.parse::<GLint>()?);
+                Ok(())
+            }
+            Self::UnsignedShort(items) => {
+                items.push(word.parse::<GLushort>()?);
+                Ok(())
+            }
+            Self::Short(items) => {
+                items.push(word.parse::<GLshort>()?);
+                Ok(())
+            }
+            Self::UnsignedByte(items) => {
+                items.push(word.parse::<GLubyte>()?);
+                Ok(())
+            }
+            Self::Byte(items) => {
+                items.push(word.parse::<GLbyte>()?);
+                Ok(())
+            }
+        }
+    }
+    fn len(&self) -> usize {
+        match self {
+            VertexAttributeValues::Float(items) => items.len(),
+            VertexAttributeValues::UnsignedInt(items) => items.len(),
+            VertexAttributeValues::Int(items) => items.len(),
+            VertexAttributeValues::UnsignedShort(items) => items.len(),
+            VertexAttributeValues::Short(items) => items.len(),
+            VertexAttributeValues::UnsignedByte(items) => items.len(),
+            VertexAttributeValues::Byte(items) => items.len(),
+        }
+    }
+    fn is_empty(&self) -> bool {
+        match self {
+            VertexAttributeValues::Float(items) => items.is_empty(),
+            VertexAttributeValues::UnsignedInt(items) => items.is_empty(),
+            VertexAttributeValues::Int(items) => items.is_empty(),
+            VertexAttributeValues::UnsignedShort(items) => items.is_empty(),
+            VertexAttributeValues::Short(items) => items.is_empty(),
+            VertexAttributeValues::UnsignedByte(items) => items.is_empty(),
+            VertexAttributeValues::Byte(items) => items.is_empty(),
+        }
+    }
+
+    fn get_bytes(&self) -> &[u8] {
+        match self {
+            VertexAttributeValues::Float(items) => bytemuck::cast_slice(items),
+            VertexAttributeValues::UnsignedInt(items) => bytemuck::cast_slice(items),
+            VertexAttributeValues::Int(items) => bytemuck::cast_slice(items),
+            VertexAttributeValues::UnsignedShort(items) => bytemuck::cast_slice(items),
+            VertexAttributeValues::Short(items) => bytemuck::cast_slice(items),
+            VertexAttributeValues::UnsignedByte(items) => bytemuck::cast_slice(items),
+            VertexAttributeValues::Byte(items) => bytemuck::cast_slice(items),
+        }
     }
 }
 
-fn parse_data(data_type: DataType, s: &str) -> MeshResult<AttributeData> {
-    match data_type {
-        DataType::Byte => Ok(AttributeData::Byte(s.parse::<GLbyte>()?)),
-        DataType::UnsignedByte => Ok(AttributeData::UnsignedByte(s.parse::<GLubyte>()?)),
-        DataType::Short => Ok(AttributeData::UnsignedShort(s.parse::<GLushort>()?)),
-        DataType::UnsignedShort => Ok(AttributeData::Short(s.parse::<GLshort>()?)),
-        DataType::Int => Ok(AttributeData::Int(s.parse::<GLint>()?)),
-        DataType::UnsignedInt => Ok(AttributeData::UnsignedInt(s.parse::<GLuint>()?)),
-        DataType::Float => Ok(AttributeData::Float(s.parse::<GLfloat>()?)),
-        DataType::Double | DataType::Fixed => Err(MeshError::UnimplementedDataFormat(data_type)),
+impl From<DataType> for VertexAttributeValues {
+    fn from(value: DataType) -> Self {
+        match value {
+            DataType::Byte => Self::Byte(vec![]),
+            DataType::UnsignedByte => Self::UnsignedByte(vec![]),
+            DataType::Short => Self::Short(vec![]),
+            DataType::UnsignedShort => Self::UnsignedShort(vec![]),
+            DataType::Int => Self::Int(vec![]),
+            DataType::UnsignedInt => Self::UnsignedInt(vec![]),
+            DataType::Float => Self::Float(vec![]),
+            DataType::Fixed | DataType::Double => unimplemented!(),
+        }
     }
 }
+
+#[allow(clippy::enum_variant_names)]
+#[derive(Debug, PartialEq)]
+enum IndicesValues {
+    UnsignedInt(Vec<GLuint>),
+    UnsignedShort(Vec<GLushort>),
+    UnsignedByte(Vec<GLubyte>),
+}
+
+impl IndicesValues {
+    fn parse_add(&mut self, word: &str) -> MeshResult<()> {
+        match self {
+            Self::UnsignedInt(items) => {
+                items.push(word.parse::<GLuint>()?);
+                Ok(())
+            }
+
+            Self::UnsignedShort(items) => {
+                items.push(word.parse::<GLushort>()?);
+                Ok(())
+            }
+
+            Self::UnsignedByte(items) => {
+                items.push(word.parse::<GLubyte>()?);
+                Ok(())
+            }
+        }
+    }
+    fn len(&self) -> usize {
+        match self {
+            IndicesValues::UnsignedInt(items) => items.len(),
+            IndicesValues::UnsignedShort(items) => items.len(),
+            IndicesValues::UnsignedByte(items) => items.len(),
+        }
+    }
+    fn get_bytes(&self) -> &[u8] {
+        match self {
+            IndicesValues::UnsignedInt(items) => bytemuck::cast_slice(items),
+            IndicesValues::UnsignedShort(items) => bytemuck::cast_slice(items),
+            IndicesValues::UnsignedByte(items) => bytemuck::cast_slice(items),
+        }
+    }
+}
+
+impl From<IndexSize> for IndicesValues {
+    fn from(value: IndexSize) -> Self {
+        match value {
+            IndexSize::UnsignedByte => Self::UnsignedByte(vec![]),
+            IndexSize::UnsignedShort => Self::UnsignedShort(vec![]),
+            IndexSize::UnsignedInt => Self::UnsignedInt(vec![]),
+        }
+    }
+}
+
+fn parse_attribute_values(data_type: DataType, s: &str) -> MeshResult<VertexAttributeValues> {
+    let mut data = VertexAttributeValues::from(data_type);
+    for word in s.split_whitespace() {
+        data.parse_add(word)?;
+    }
+    Ok(data)
+}
+fn parse_indices_values(index_size: IndexSize, s: &str) -> MeshResult<IndicesValues> {
+    let mut data = IndicesValues::from(index_size);
+    for word in s.split_whitespace() {
+        data.parse_add(word)?;
+    }
+    Ok(data)
+}
+
 struct Attribute {
     index: GLuint,
     vertex_attribute: VertexAttribute,
-    data: Vec<AttributeData>,
+    data: VertexAttributeValues,
 }
 
 fn parse_data_type(s: &str) -> MeshResult<(DataType, bool)> {
@@ -167,11 +299,7 @@ impl Attribute {
         }
         let vertex_attribute = VertexAttribute::new(size, data_type, normalized);
         // parse data
-        let mut data = vec![];
-        for word in string_data.split_whitespace() {
-            let value = parse_data(data_type, word)?;
-            data.push(value);
-        }
+        let data = parse_attribute_values(data_type, string_data)?;
         Ok(Self {
             index,
             vertex_attribute,
@@ -206,8 +334,8 @@ fn process_vao(
 }
 
 struct IndicesData {
-    data_type: IndexSize,
-    data: Vec<AttributeData>,
+    index_size: IndexSize,
+    data: IndicesValues,
 }
 
 fn parse_index_type(s: &str) -> MeshResult<(IndexSize, bool)> {
@@ -225,19 +353,15 @@ fn parse_index_type(s: &str) -> MeshResult<(IndexSize, bool)> {
 impl IndicesData {
     fn new(attributes: &[OwnedAttribute], string_data: &str) -> MeshResult<Self> {
         let data_type = find_attribute(attributes, "type")?;
-        let (data_type, _) = parse_index_type(&data_type)?;
+        let (index_size, _) = parse_index_type(&data_type)?;
 
         // parse data
-        let mut data = vec![];
-        for word in string_data.split_whitespace() {
-            let value = parse_index_data(data_type, word)?;
-            data.push(value);
-        }
-        Ok(Self { data_type, data })
+        let data = parse_indices_values(index_size, string_data)?;
+        Ok(Self { index_size, data })
     }
 
     fn byte_size(&self) -> usize {
-        self.data.len() * self.data_type.size()
+        self.data.len() * self.index_size.size()
     }
 }
 #[derive(Debug, Clone, Copy)]
@@ -327,8 +451,8 @@ impl RenderCommand {
 }
 
 struct MeshData {
-    attrib_array_buffer: Buffer<AttributeData>,
-    index_buffer: Buffer<AttributeData>,
+    attrib_array_buffer: Buffer<u8>,
+    index_buffer: Buffer<u8>,
     vao: VertexArrayObject,
     named_vaos: HashMap<String, VertexArrayObject>,
     commands: Vec<RenderCommand>,
@@ -355,20 +479,6 @@ struct ParsedData {
     indices_list: Vec<IndicesData>,
     named_vao_list: Vec<(String, Vec<GLuint>)>,
     commands: Vec<RenderCommand>,
-}
-
-fn convert_to_raw_data(data: &[AttributeData]) -> Vec<u32> {
-    data.iter()
-        .map(|a| match *a {
-            AttributeData::Float(f) => bytemuck::cast(f),
-            AttributeData::UnsignedInt(i) => i,
-            AttributeData::Int(i) => bytemuck::cast(i),
-            AttributeData::UnsignedShort(i) => u32::from(i),
-            AttributeData::Short(i) => u32::from(bytemuck::cast::<GLshort, GLushort>(i)),
-            AttributeData::UnsignedByte(i) => u32::from(i),
-            AttributeData::Byte(i) => u32::from(bytemuck::cast::<GLbyte, GLubyte>(i)),
-        })
-        .collect::<Vec<u32>>()
 }
 
 impl Mesh {
@@ -560,7 +670,7 @@ impl Mesh {
         for (i, attrib) in parsed_data.attribs.iter().enumerate() {
             let offset = attribute_start_locs[i];
             mesh_data.attrib_array_buffer.update_data_custom_size(
-                &attrib.data,
+                attrib.data.get_bytes(),
                 attrib.byte_size() as isize,
                 offset as isize,
             );
@@ -609,7 +719,7 @@ impl Mesh {
             for (i, data) in parsed_data.indices_list.iter().enumerate() {
                 let offset = index_start_locs[i];
                 mesh_data.index_buffer.update_data_custom_size(
-                    &data.data,
+                    data.data.get_bytes(),
                     data.byte_size() as isize,
                     offset as isize,
                 );
@@ -628,7 +738,7 @@ impl Mesh {
                 {
                     *offset = index_start_locs[i];
                     *count = parsed_data.indices_list[i].data.len() as GLint;
-                    *index_size = parsed_data.indices_list[i].data_type;
+                    *index_size = parsed_data.indices_list[i].index_size;
 
                     i += 1;
                 }
@@ -675,12 +785,12 @@ mod test {
     use gl::types::{GLuint, GLushort};
 
     use crate::{
-        mesh::{AttributeData, RenderCommand},
+        mesh::RenderCommand,
         opengl::{IndexSize, Primitive},
         vertex_attributes::{DataType, VertexAttribute},
     };
 
-    use super::{Attribute, IndicesData, Mesh};
+    use super::{Attribute, IndicesData, IndicesValues, Mesh, VertexAttributeValues};
     macro_rules! test_case {
         ($fname:expr) => {
             concat!(env!("CARGO_MANIFEST_DIR"), "/resources/test/", $fname) // assumes Linux ('/')!
@@ -691,7 +801,7 @@ mod test {
         attribute: &Attribute,
         index: GLuint,
         vertex_attribute: VertexAttribute,
-        data: &[AttributeData],
+        data: VertexAttributeValues,
     ) {
         assert_eq!(attribute.index, index);
         assert_eq!(
@@ -711,29 +821,24 @@ mod test {
         if attribute.data.is_empty() {
             return;
         }
-        let first = attribute.data[0];
-        if let AttributeData::Float(_) = first {
-            // assume all values are float
-            for (i, attribute) in attribute.data.iter().enumerate() {
-                let a = match attribute {
-                    AttributeData::Float(a) => a,
+        match &attribute.data {
+            VertexAttributeValues::Float(items) => {
+                let data = match data {
+                    VertexAttributeValues::Float(items) => items,
                     _ => panic!(),
                 };
-                let b = match data[i] {
-                    AttributeData::Float(b) => b,
-                    _ => panic!(),
-                };
-
-                assert!((a - b).abs() < f32::EPSILON, "{i}: {a} {b}");
+                for (i, attribute) in items.iter().enumerate() {
+                    let a = attribute;
+                    let b = data[i];
+                    assert!((a - b).abs() < f32::EPSILON, "{i}: {a} {b}");
+                }
             }
-        } else {
-            // assume all values are integral
-            assert_eq!(attribute.data, data)
+            _ => assert_eq!(attribute.data, data),
         }
     }
 
-    fn test_indices(indices: &IndicesData, index_size: IndexSize, data: &[AttributeData]) {
-        assert_eq!(indices.data_type, index_size);
+    fn test_indices(indices: &IndicesData, index_size: IndexSize, data: IndicesValues) {
+        assert_eq!(indices.index_size, index_size);
         assert_eq!(indices.data, data);
     }
     fn test_named_vaos(named_vaos: &[(String, Vec<u32>)], expected: &[(&str, Vec<u32>)]) {
@@ -761,28 +866,24 @@ mod test {
         // testing attributes
         assert_eq!(parsed_xml.attribs.len(), 1);
         let attribute = &parsed_xml.attribs[0];
-        let data = [
+        let data = vec![
             0.5, 0.0, -0.5, 0.5, 0.0, 0.5, -0.5, 0.0, 0.5, -0.5, 0.0, -0.5,
-        ]
-        .map(AttributeData::Float);
+        ];
 
         test_attribute(
             attribute,
             0,
             VertexAttribute::new(3, DataType::Float, false),
-            &data,
+            VertexAttributeValues::Float(data),
         );
 
         // testing indices
         assert_eq!(parsed_xml.indices_list.len(), 1);
         let indices = &parsed_xml.indices_list[0];
 
-        let data = [0, 1, 2, 0, 2, 1, 2, 3, 0, 2, 0, 3]
-            .iter()
-            .map(|n: &GLushort| AttributeData::UnsignedShort(*n))
-            .collect::<Vec<_>>();
+        let data = IndicesValues::UnsignedShort(vec![0, 1, 2, 0, 2, 1, 2, 3, 0, 2, 0, 3]);
 
-        test_indices(indices, IndexSize::UnsignedShort, &data);
+        test_indices(indices, IndexSize::UnsignedShort, data);
 
         assert_eq!(parsed_xml.named_vao_list.len(), 0);
 
@@ -802,33 +903,30 @@ mod test {
         let attribute = &parsed_xml.attribs[0];
 
         // testing attribute data
-        let data = [
+        let data = VertexAttributeValues::Float(vec![
             0.5, 0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, 0.5, -0.5,
             0.5, 0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, -0.5,
             -0.5, 0.5, -0.5, 0.5, 0.5, 0.5, -0.5, -0.5, 0.5, -0.5, -0.5, -0.5, -0.5, 0.5, -0.5,
             -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, 0.5, -0.5, 0.5,
             0.5, -0.5, -0.5, 0.5, -0.5, -0.5, -0.5, -0.5, 0.5, -0.5,
-        ]
-        .map(AttributeData::Float);
+        ]);
         test_attribute(
             attribute,
             0,
             VertexAttribute::new(3, DataType::Float, false),
-            &data,
+            data,
         );
 
         // testing indices
         assert_eq!(parsed_xml.indices_list.len(), 1);
         let indices = &parsed_xml.indices_list[0];
-        assert_eq!(indices.data_type, IndexSize::UnsignedShort);
-        let data: Vec<AttributeData> = [
+        assert_eq!(indices.index_size, IndexSize::UnsignedShort);
+        let data = IndicesValues::UnsignedShort(vec![
             0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4, 8, 9, 10, 10, 11, 8, 12, 13, 14, 14, 15, 12, 16,
             17, 18, 18, 19, 16, 20, 21, 22, 22, 23, 20,
-        ]
-        .iter()
-        .map(|n: &GLushort| AttributeData::UnsignedShort(*n))
-        .collect();
-        test_indices(indices, IndexSize::UnsignedShort, &data);
+        ]);
+
+        test_indices(indices, IndexSize::UnsignedShort, data);
 
         assert_eq!(parsed_xml.named_vao_list.len(), 0);
 
@@ -849,7 +947,7 @@ mod test {
 
         // testing attribute data
         #[allow(clippy::excessive_precision)]
-        let data = [
+        let data = VertexAttributeValues::Float(vec![
             0.0,
             0.866,
             0.0,
@@ -946,37 +1044,32 @@ mod test {
             0.0,
             0.0,
             0.0,
-        ]
-        .map(AttributeData::Float);
+        ]);
 
         test_attribute(
             attribute,
             0,
             VertexAttribute::new(3, DataType::Float, false),
-            &data,
+            data,
         );
         // testing indices
         assert_eq!(parsed_xml.indices_list.len(), 2);
         let indices = &parsed_xml.indices_list[0];
-        assert_eq!(indices.data_type, IndexSize::UnsignedShort);
-        let data: Vec<AttributeData> = [
+        assert_eq!(indices.index_size, IndexSize::UnsignedShort);
+        let data = IndicesValues::UnsignedShort(vec![
             0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
             24, 25, 26, 27, 28, 29, 30, 1,
-        ]
-        .iter()
-        .map(|n: &GLushort| AttributeData::UnsignedShort(*n))
-        .collect();
-        test_indices(indices, IndexSize::UnsignedShort, &data);
+        ]);
+
+        test_indices(indices, IndexSize::UnsignedShort, data);
 
         let indices = &parsed_xml.indices_list[1];
-        let data: Vec<AttributeData> = [
+        let data = IndicesValues::UnsignedShort(vec![
             31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10,
             9, 8, 7, 6, 5, 4, 3, 2, 1, 30,
-        ]
-        .iter()
-        .map(|n: &GLushort| AttributeData::UnsignedShort(*n))
-        .collect();
-        test_indices(indices, IndexSize::UnsignedShort, &data);
+        ]);
+
+        test_indices(indices, IndexSize::UnsignedShort, data);
 
         assert_eq!(parsed_xml.named_vao_list.len(), 0);
 
@@ -997,49 +1090,44 @@ mod test {
         assert_eq!(parsed_xml.attribs.len(), 2);
         let attribute = &parsed_xml.attribs[0];
 
-        let data = [
+        let data = VertexAttributeValues::Float(vec![
             0.5, 0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, 0.5, -0.5,
             0.5, 0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, -0.5,
             -0.5, 0.5, -0.5, 0.5, 0.5, 0.5, -0.5, -0.5, 0.5, -0.5, -0.5, -0.5, -0.5, 0.5, -0.5,
             -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, 0.5, -0.5, 0.5,
             0.5, -0.5, -0.5, 0.5, -0.5, -0.5, -0.5, -0.5, 0.5, -0.5,
-        ]
-        .map(AttributeData::Float);
+        ]);
         test_attribute(
             attribute,
             0,
             VertexAttribute::new(3, DataType::Float, false),
-            &data,
+            data,
         );
 
         let attribute = &parsed_xml.attribs[1];
-        let data = [
+        let data = VertexAttributeValues::Float(vec![
             0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0,
             0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0,
             0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0,
             1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0,
             0.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0,
             0.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0,
-        ]
-        .map(AttributeData::Float);
+        ]);
         test_attribute(
             attribute,
             1,
             VertexAttribute::new(4, DataType::Float, false),
-            &data,
+            data,
         );
 
         // testing indices
         assert_eq!(parsed_xml.indices_list.len(), 1);
         let indices = &parsed_xml.indices_list[0];
-        let data: Vec<AttributeData> = [
+        let data = IndicesValues::UnsignedShort(vec![
             0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4, 8, 9, 10, 10, 11, 8, 12, 13, 14, 14, 15, 12, 16,
             17, 18, 18, 19, 16, 20, 21, 22, 22, 23, 20,
-        ]
-        .iter()
-        .map(|n: &GLushort| AttributeData::UnsignedShort(*n))
-        .collect();
-        test_indices(indices, IndexSize::UnsignedShort, &data);
+        ]);
+        test_indices(indices, IndexSize::UnsignedShort, data);
 
         assert_eq!(parsed_xml.named_vao_list.len(), 0);
 
@@ -1060,7 +1148,7 @@ mod test {
 
         // testing attribute data
         #[allow(clippy::excessive_precision)]
-        let data = [
+        let data = VertexAttributeValues::Float(vec![
             0.0,
             0.866,
             0.0,
@@ -1157,17 +1245,16 @@ mod test {
             0.0,
             0.0,
             0.0,
-        ]
-        .map(AttributeData::Float);
+        ]);
 
         test_attribute(
             attribute,
             0,
             VertexAttribute::new(3, DataType::Float, false),
-            &data,
+            data,
         );
         let attribute = &parsed_xml.attribs[1];
-        let data = [
+        let data = VertexAttributeValues::Float(vec![
             1.0, 1.0, 1.0, 1.0, 0.9, 0.9, 0.9, 1.0, 0.82, 0.82, 0.82, 1.0, 0.74, 0.74, 0.74, 1.0,
             0.66, 0.66, 0.66, 1.0, 0.58, 0.58, 0.58, 1.0, 0.5, 0.5, 0.5, 1.0, 0.58, 0.58, 0.58,
             1.0, 0.66, 0.66, 0.66, 1.0, 0.74, 0.74, 0.74, 1.0, 0.82, 0.82, 0.82, 1.0, 0.9, 0.9,
@@ -1177,36 +1264,29 @@ mod test {
             1.0, 0.74, 0.74, 0.74, 1.0, 0.66, 0.66, 0.66, 1.0, 0.58, 0.58, 0.58, 1.0, 0.5, 0.5,
             0.5, 1.0, 0.58, 0.58, 0.58, 1.0, 0.66, 0.66, 0.66, 1.0, 0.74, 0.74, 0.74, 1.0, 0.82,
             0.82, 0.82, 1.0, 0.9, 0.9, 0.9, 1.0,
-        ]
-        .map(AttributeData::Float);
+        ]);
         test_attribute(
             attribute,
             1,
             VertexAttribute::new(4, DataType::Float, false),
-            &data,
+            data,
         );
         // testing indices
         assert_eq!(parsed_xml.indices_list.len(), 2);
         let indices = &parsed_xml.indices_list[0];
-        assert_eq!(indices.data_type, IndexSize::UnsignedShort);
-        let data: Vec<AttributeData> = [
+        assert_eq!(indices.index_size, IndexSize::UnsignedShort);
+        let data = IndicesValues::UnsignedShort(vec![
             0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
             24, 25, 26, 27, 28, 29, 30, 1,
-        ]
-        .iter()
-        .map(|n: &GLushort| AttributeData::UnsignedShort(*n))
-        .collect();
-        test_indices(indices, IndexSize::UnsignedShort, &data);
+        ]);
+        test_indices(indices, IndexSize::UnsignedShort, data);
 
         let indices = &parsed_xml.indices_list[1];
-        let data: Vec<AttributeData> = [
+        let data = IndicesValues::UnsignedShort(vec![
             31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10,
             9, 8, 7, 6, 5, 4, 3, 2, 1, 30,
-        ]
-        .iter()
-        .map(|n: &GLushort| AttributeData::UnsignedShort(*n))
-        .collect();
-        test_indices(indices, IndexSize::UnsignedShort, &data);
+        ]);
+        test_indices(indices, IndexSize::UnsignedShort, data);
 
         assert_eq!(parsed_xml.named_vao_list.len(), 0);
 
@@ -1226,49 +1306,44 @@ mod test {
         assert_eq!(parsed_xml.attribs.len(), 2);
         let attribute = &parsed_xml.attribs[0];
 
-        let data = [
+        let data = VertexAttributeValues::Float(vec![
             0.5, 0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, 0.5, -0.5,
             0.5, 0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, -0.5,
             -0.5, 0.5, -0.5, 0.5, 0.5, 0.5, -0.5, -0.5, 0.5, -0.5, -0.5, -0.5, -0.5, 0.5, -0.5,
             -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, 0.5, -0.5, 0.5,
             0.5, -0.5, -0.5, 0.5, -0.5, -0.5, -0.5, -0.5, 0.5, -0.5,
-        ]
-        .map(AttributeData::Float);
+        ]);
         test_attribute(
             attribute,
             0,
             VertexAttribute::new(3, DataType::Float, false),
-            &data,
+            data,
         );
 
         let attribute = &parsed_xml.attribs[1];
-        let data = [
+        let data = VertexAttributeValues::Float(vec![
             1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.75,
             0.75, 0.75, 1.0, 0.75, 0.75, 0.75, 1.0, 0.75, 0.75, 0.75, 1.0, 0.75, 0.75, 0.75, 1.0,
             0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0, 1.0,
             1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.75, 0.75,
             0.75, 1.0, 0.75, 0.75, 0.75, 1.0, 0.75, 0.75, 0.75, 1.0, 0.75, 0.75, 0.75, 1.0, 0.5,
             0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0,
-        ]
-        .map(AttributeData::Float);
+        ]);
         test_attribute(
             attribute,
             1,
             VertexAttribute::new(4, DataType::Float, false),
-            &data,
+            data,
         );
 
         // testing indices
         assert_eq!(parsed_xml.indices_list.len(), 1);
         let indices = &parsed_xml.indices_list[0];
-        let data: Vec<AttributeData> = [
+        let data = IndicesValues::UnsignedShort(vec![
             0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4, 8, 9, 10, 10, 11, 8, 12, 13, 14, 14, 15, 12, 16,
             17, 18, 18, 19, 16, 20, 21, 22, 22, 23, 20,
-        ]
-        .iter()
-        .map(|n: &GLushort| AttributeData::UnsignedShort(*n))
-        .collect();
-        test_indices(indices, IndexSize::UnsignedShort, &data);
+        ]);
+        test_indices(indices, IndexSize::UnsignedShort, data);
 
         assert_eq!(parsed_xml.named_vao_list.len(), 0);
 

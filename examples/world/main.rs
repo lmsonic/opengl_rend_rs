@@ -128,9 +128,7 @@ impl Application for App {
 
         // Draw
         let camera_position = self.calculate_camera_pos();
-        let look_at = Mat4::look_at_rh(camera_position, self.camera_target, Vec3::Y);
-        dbg!(camera_position);
-        dbg!(self.camera_target);
+        let look_at = Mat4::look_at_lh(camera_position, self.camera_target, Vec3::Y);
         self.set_camera_matrices(look_at);
 
         // Draw ground
