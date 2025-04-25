@@ -782,10 +782,11 @@ mod test {
     use std::path::Path;
 
     use gl::types::GLuint;
+    use glfw::{fail_on_errors, Context};
 
     use crate::{
         mesh::RenderCommand,
-        opengl::{IndexSize, Primitive},
+        opengl::{IndexSize, OpenGl, Primitive},
         vertex_attributes::{DataType, VertexAttribute},
     };
 
@@ -1362,5 +1363,39 @@ mod test {
             ("flat", vec![0]),
         ];
         test_named_vaos(&parsed_xml.named_vao_list, &expected);
+    }
+
+    #[test]
+    fn test_buffer_data() {
+        let mut glfw = glfw::init(fail_on_errors!()).unwrap();
+        glfw.window_hint(glfw::WindowHint::ContextVersion(4, 3));
+        glfw.window_hint(glfw::WindowHint::OpenGlProfile(
+            glfw::OpenGlProfileHint::Core,
+        ));
+        glfw.window_hint(glfw::WindowHint::OpenGlDebugContext(true));
+
+        // Create a windowed mode window and its OpenGL context
+        let (mut window, _) = glfw
+            .create_window(600, 600, "OpenGl", glfw::WindowMode::Windowed)
+            .expect("Failed to create GLFW window.");
+
+        // Make the window's context current
+        window.make_current();
+        window.set_key_polling(true);
+        window.set_framebuffer_size_polling(true);
+        let _ = OpenGl::new(&mut window);
+        let mut mesh = Mesh::new("resources/test/UnitPlane.xml").unwrap();
+        mesh.mesh_data.attrib_array_buffer.bind();
+        let bytes = mesh.mesh_data.attrib_array_buffer.get_data(0, 48);
+
+        let floats: &[f32] = bytemuck::cast_slice(&bytes);
+        assert_eq!(
+            floats,
+            &[0.5, 0.0, -0.5, 0.5, 0.0, 0.5, -0.5, 0.0, 0.5, -0.5, 0.0, -0.5,]
+        );
+        mesh.mesh_data.index_buffer.bind();
+        let bytes = mesh.mesh_data.index_buffer.get_data(0, 24);
+        let indices: &[u16] = bytemuck::cast_slice(&bytes);
+        assert_eq!(indices, &[0, 1, 2, 0, 2, 1, 2, 3, 0, 2, 0, 3])
     }
 }

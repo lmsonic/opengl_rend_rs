@@ -9,5 +9,7 @@ uniform mat4 cameraToClip;
 
 void main()
 {
-    gl_Position = cameraToClip * worldToCamera * modelToWorld * position;
+    vec4 worldPos = modelToWorld * position;
+    vec4 cameraPos = worldToCamera * worldPos;
+    gl_Position = cameraToClip * cameraPos;
 }

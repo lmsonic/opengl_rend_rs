@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
 use std::ffi::CString;
-use std::process::id;
 
 use gl::types::GLsizei;
 use glam::{Mat4, Vec3, Vec4};
@@ -424,9 +423,9 @@ impl Application for App {
         );
 
         // enable backface culling
-        gl.enable(Capability::CullFace);
-        gl.cull_face(CullMode::Back);
-        gl.front_face(FrontFace::CW);
+        // gl.enable(Capability::CullFace);
+        // gl.cull_face(CullMode::Back);
+        // gl.front_face(FrontFace::CW);
         // gl.polygon_mode(PolygonMode::Line);
 
         // enable depth test
@@ -472,7 +471,7 @@ impl Application for App {
         {
             // Draw ground
             let push = PushStack::new(&mut model_matrix);
-            push.stack.scale(Vec3::new(100.0, 1.0, 100.0));
+            push.stack.scale(Vec3::new(1000.0, 1.0, 1000.0));
             let program_data = &mut self.uniform_color;
             program_data.program.set_used();
             program_data
@@ -484,31 +483,31 @@ impl Application for App {
             self.plane_mesh.render(&mut self.gl);
             program_data.program.set_unused();
         }
-        self.draw_forest(&mut model_matrix);
-        {
-            // Draw the building
-            let push = PushStack::new(&mut model_matrix);
-            push.stack.translate(Vec3::new(20.0, 0.0, -10.0));
-            self.draw_parthenon(push.stack);
-        }
-        if self.look_at_point {
-            self.gl.disable(Capability::DepthTest);
-            let identity = Mat4::IDENTITY;
-            let push = PushStack::new(&mut model_matrix);
-            let camera_direction = self.camera_target - camera_position;
-            push.stack
-                .translate(Vec3::new(0.0, 0.0, -camera_direction.length()));
-            push.stack.scale(Vec3::ONE);
-            let p = &mut self.object_color;
-            p.program.set_used();
-            p.program
-                .set_uniform(p.model_to_world_matrix_uniform, push.stack.top());
-            p.program
-                .set_uniform(p.world_to_camera_matrix_uniform, identity);
-            self.cube_color_mesh.render(&mut self.gl);
-            p.program.set_unused();
-            self.gl.enable(Capability::DepthTest);
-        }
+        // self.draw_forest(&mut model_matrix);
+        // {
+        //     // Draw the building
+        //     let push = PushStack::new(&mut model_matrix);
+        //     push.stack.translate(Vec3::new(20.0, 0.0, -10.0));
+        //     self.draw_parthenon(push.stack);
+        // }
+        // if self.look_at_point {
+        //     self.gl.disable(Capability::DepthTest);
+        //     let identity = Mat4::IDENTITY;
+        //     let push = PushStack::new(&mut model_matrix);
+        //     let camera_direction = self.camera_target - camera_position;
+        //     push.stack
+        //         .translate(Vec3::new(0.0, 0.0, -camera_direction.length()));
+        //     push.stack.scale(Vec3::ONE);
+        //     let p = &mut self.object_color;
+        //     p.program.set_used();
+        //     p.program
+        //         .set_uniform(p.model_to_world_matrix_uniform, push.stack.top());
+        //     p.program
+        //         .set_uniform(p.world_to_camera_matrix_uniform, identity);
+        //     self.cube_color_mesh.render(&mut self.gl);
+        //     p.program.set_unused();
+        //     self.gl.enable(Capability::DepthTest);
+        // }
     }
 
     fn keyboard(&mut self, key: Key, action: Action, modifier: Modifiers) {
@@ -534,14 +533,19 @@ impl Application for App {
                 Key::U => self.camera_spherical_coords.z += 5.0 * modifier,
                 Key::Space => {
                     self.look_at_point = !self.look_at_point;
+                    println!("look at point {}", self.look_at_point);
                     println!("Target {}", self.camera_target);
-                    println!("Position {}", self.camera_spherical_coords);
                 }
                 _ => {}
             }
             self.camera_spherical_coords.y = self.camera_spherical_coords.y.clamp(-78.75, -1.0);
             self.camera_spherical_coords.z = self.camera_spherical_coords.z.min(5.0);
             self.camera_target.y = self.camera_target.y.min(0.0);
+            let position = self.calculate_camera_pos();
+            println!("Target {}", self.camera_target);
+            println!("Absolute Position {}", position);
+            println!("Distance {}", self.camera_target.distance(position));
+            println!("Spherical coords {}", self.camera_spherical_coords);
         }
     }
 
@@ -549,7 +553,7 @@ impl Application for App {
         const Z_NEAR: f32 = 0.1;
         const Z_FAR: f32 = 100.0;
         let matrix = Mat4::perspective_rh_gl(
-            f32::to_radians(45.0),
+            f32::to_radians(100.0),
             width as f32 / height as f32,
             Z_NEAR,
             Z_FAR,

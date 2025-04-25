@@ -10,6 +10,8 @@ uniform mat4 cameraToClip;
 smooth out vec4 fragColor;
 void main()
 {
-    gl_Position = cameraToClip * worldToCamera * modelToWorld * position;
+    vec4 worldPos = modelToWorld * position;
+    vec4 cameraPos = worldToCamera * worldPos;
+    gl_Position = cameraToClip * cameraPos;
     fragColor = color;
 }

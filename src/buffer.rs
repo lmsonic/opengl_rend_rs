@@ -39,19 +39,19 @@ pub enum Usage {
     DynamicCopy = gl::DYNAMIC_COPY,
 }
 
-pub struct Buffer<T> {
+pub struct Buffer<T: Default> {
     id: GLHandle,
     target: BufferType,
     phantom: PhantomData<T>,
 }
 
-impl<T> Drop for Buffer<T> {
+impl<T: Default> Drop for Buffer<T> {
     fn drop(&mut self) {
         unsafe { gl::DeleteBuffers(1, &self.id) }
     }
 }
 
-impl<T> Buffer<T> {
+impl<T: Default> Buffer<T> {
     pub fn new(target: BufferType) -> Self {
         let mut id = NULL_HANDLE;
         unsafe { gl::GenBuffers(1, &mut id) };
@@ -81,6 +81,24 @@ impl<T> Buffer<T> {
                 usage as GLenum,
             )
         };
+    }
+    pub fn get_data(&mut self, offset: GLintptr, size: usize) -> Vec<T> {
+        let mut data: Vec<T> = vec![];
+        for _ in 0..size {
+            data.push(T::default());
+        }
+
+        let size_bytes = size / std::mem::size_of::<T>();
+        dbg!(size_bytes);
+        unsafe {
+            gl::GetBufferSubData(
+                self.target as GLenum,
+                offset,
+                size_bytes as isize,
+                data.as_mut_ptr() as _,
+            )
+        };
+        data
     }
     pub fn update_data(&mut self, data: &[T], offset: GLintptr) {
         dbg!(std::mem::size_of_val(data));
