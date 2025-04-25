@@ -42,6 +42,7 @@ impl DataType {
     }
 }
 
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub struct VertexAttribute {
     pub components: GLint,
     pub data_type: DataType,

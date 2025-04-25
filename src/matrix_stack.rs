@@ -33,8 +33,8 @@ impl MatrixStack {
             self.current_matrix = *value;
         }
     }
-    pub fn top(&self) -> Option<&Mat4> {
-        self.stack.last()
+    pub fn top(&self) -> Mat4 {
+        self.current_matrix
     }
     pub fn rotate_rad(&mut self, axis: Vec3, angle_rad: f32) {
         let q = Quat::from_axis_angle(axis, angle_rad);
@@ -91,18 +91,18 @@ impl MatrixStack {
     }
 }
 
-pub struct PushStack {
-    stack: MatrixStack,
+pub struct PushStack<'a> {
+    pub stack: &'a mut MatrixStack,
 }
 
-impl Drop for PushStack {
+impl Drop for PushStack<'_> {
     fn drop(&mut self) {
         self.stack.pop();
     }
 }
 
-impl PushStack {
-    pub fn new(mut stack: MatrixStack) -> Self {
+impl<'a> PushStack<'a> {
+    pub fn new(stack: &'a mut MatrixStack) -> Self {
         stack.push();
         Self { stack }
     }

@@ -704,7 +704,6 @@ impl Mesh {
             };
             index_start_locs.push(index_buffer_size);
             index_buffer_size += data.byte_size();
-            dbg!(index_buffer_size);
         }
 
         // create index buffer
@@ -782,7 +781,7 @@ impl Mesh {
 mod test {
     use std::path::Path;
 
-    use gl::types::{GLuint, GLushort};
+    use gl::types::GLuint;
 
     use crate::{
         mesh::RenderCommand,
