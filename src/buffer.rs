@@ -1,12 +1,12 @@
 use std::marker::PhantomData;
 
-use gl::types::{GLenum, GLintptr, GLsizeiptr};
+use gl::types::{GLenum, GLintptr, GLsizeiptr, GLuint};
 
 use crate::{GLHandle, NULL_HANDLE};
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
-pub enum BufferType {
+pub enum Target {
     ArrayBuffer = gl::ARRAY_BUFFER,
     IndexBuffer = gl::ELEMENT_ARRAY_BUFFER,
 
@@ -41,7 +41,7 @@ pub enum Usage {
 
 pub struct Buffer<T: Default> {
     id: GLHandle,
-    target: BufferType,
+    target: Target,
     phantom: PhantomData<T>,
 }
 
@@ -52,7 +52,7 @@ impl<T: Default> Drop for Buffer<T> {
 }
 
 impl<T: Default> Buffer<T> {
-    pub fn new(target: BufferType) -> Self {
+    pub fn new(target: Target) -> Self {
         let mut id = NULL_HANDLE;
         unsafe { gl::GenBuffers(1, &mut id) };
         Self {
@@ -61,7 +61,18 @@ impl<T: Default> Buffer<T> {
             phantom: PhantomData,
         }
     }
-    pub fn reserve_data(&mut self, size: GLsizeiptr, usage: Usage) {
+    pub fn reserve_data(&mut self, size: isize, usage: Usage) {
+        let size_bytes = size * std::mem::size_of::<T>() as isize;
+        unsafe {
+            gl::BufferData(
+                self.target as GLenum,
+                size_bytes as isize,
+                std::ptr::null(),
+                usage as GLenum,
+            )
+        };
+    }
+    pub fn reserve_data_bytes(&mut self, size: GLsizeiptr, usage: Usage) {
         unsafe {
             gl::BufferData(
                 self.target as GLenum,
@@ -82,39 +93,39 @@ impl<T: Default> Buffer<T> {
             )
         };
     }
-    pub fn get_data(&mut self, offset: GLintptr, size: usize) -> Vec<T> {
+    pub fn get_data(&mut self, offset: isize, size: usize) -> Vec<T> {
         let mut data: Vec<T> = vec![];
         for _ in 0..size {
             data.push(T::default());
         }
 
-        let size_bytes = size / std::mem::size_of::<T>();
+        let size_bytes = size * std::mem::size_of::<T>();
+        let offset_bytes = offset * std::mem::size_of::<T>() as isize;
         dbg!(size_bytes);
         unsafe {
             gl::GetBufferSubData(
                 self.target as GLenum,
-                offset,
+                offset_bytes as GLintptr,
                 size_bytes as isize,
                 data.as_mut_ptr() as _,
             )
         };
         data
     }
-    pub fn update_data(&mut self, data: &[T], offset: GLintptr) {
-        dbg!(std::mem::size_of_val(data));
-        dbg!(std::mem::size_of::<T>());
+    pub fn update_data(&mut self, data: &[T], offset: isize) {
+        let offset_bytes = offset * std::mem::size_of::<T>() as isize;
 
         unsafe {
             gl::BufferSubData(
                 self.target as GLenum,
-                offset,
+                offset_bytes as GLintptr,
                 std::mem::size_of_val(data) as isize,
                 data.as_ptr() as *const _,
             )
         };
     }
 
-    pub fn update_data_custom_size(&mut self, data: &[T], size: isize, offset: GLintptr) {
+    pub fn update_data_bytes(&mut self, data: &[u8], size: GLsizeiptr, offset: GLintptr) {
         unsafe {
             gl::BufferSubData(
                 self.target as GLenum,
@@ -123,6 +134,36 @@ impl<T: Default> Buffer<T> {
                 data.as_ptr() as *const _,
             )
         };
+    }
+
+    pub fn bind_range(&mut self, binding_index: GLuint, offset: isize, size: usize) {
+        assert!(
+            self.target == Target::AtomicCounterBuffer
+                || self.target == Target::TransformFeedbackBuffer
+                || self.target == Target::UniformBuffer
+                || self.target == Target::ShaderStorageBuffer
+        );
+        let size_bytes = size * std::mem::size_of::<T>();
+        let offset_bytes = offset * std::mem::size_of::<T>() as isize;
+
+        unsafe {
+            gl::BindBufferRange(
+                self.target as GLenum,
+                binding_index,
+                self.id,
+                offset_bytes as GLsizeiptr,
+                size_bytes as GLsizeiptr,
+            )
+        };
+    }
+    pub fn bind_range_bytes(&mut self, binding_index: GLuint, offset: GLintptr, size: GLsizeiptr) {
+        assert!(
+            self.target == Target::AtomicCounterBuffer
+                || self.target == Target::TransformFeedbackBuffer
+                || self.target == Target::UniformBuffer
+                || self.target == Target::ShaderStorageBuffer
+        );
+        unsafe { gl::BindBufferRange(self.target as GLenum, binding_index, self.id, offset, size) };
     }
 
     pub fn bind(&mut self) {

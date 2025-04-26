@@ -3,11 +3,12 @@ use std::{
     ptr,
 };
 
-use gl::types::{GLenum, GLint};
+use gl::types::{GLenum, GLint, GLuint};
 
 use crate::{uniforms::SetUniform, GLHandle};
 
 pub type GLLocation = GLint;
+pub type GLBlockIndex = GLuint;
 
 pub struct Program {
     id: GLHandle,
@@ -73,7 +74,18 @@ impl Program {
         }
         Some(loc)
     }
+    pub fn get_uniform_block_index(&mut self, name: &CStr) -> Option<GLBlockIndex> {
+        let loc = unsafe { gl::GetUniformBlockIndex(self.id, name.as_ptr()) };
+        if loc == gl::INVALID_INDEX {
+            return None;
+        }
+        Some(loc)
+    }
+    pub fn uniform_block_binding(&mut self, block_index: GLBlockIndex, binding_index: GLuint) {
+        unsafe { gl::UniformBlockBinding(self.id, block_index, binding_index) };
+    }
 
+    #[allow(private_bounds)]
     pub fn set_uniform<T: SetUniform>(&mut self, location: GLint, value: T) {
         value.set_uniform(location);
     }

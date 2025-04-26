@@ -5,7 +5,7 @@ use gl::types::GLsizei;
 use glam::{Mat4, Vec3};
 use glfw::{Action, Key, Modifiers, PWindow};
 use opengl_rend::app::{run_app, Application};
-use opengl_rend::buffer::{BufferType, Usage};
+use opengl_rend::buffer::{Target, Usage};
 use opengl_rend::opengl::{
     Capability, ClearFlags, CullMode, DepthFunc, FrontFace, IndexSize, Primitive,
 };
@@ -501,12 +501,12 @@ impl Application for App {
         let mut program = Program::new(&[vert_shader, frag_shader]).unwrap();
 
         // initialize vertex buffer
-        let mut vertex_buffer = Buffer::new(BufferType::ArrayBuffer);
+        let mut vertex_buffer = Buffer::new(Target::ArrayBuffer);
         vertex_buffer.bind();
         vertex_buffer.buffer_data(&VERTEX_DATA, Usage::StaticDraw);
         vertex_buffer.unbind();
         // initialize index buffer
-        let mut index_buffer = Buffer::new(BufferType::IndexBuffer);
+        let mut index_buffer = Buffer::new(Target::IndexBuffer);
         index_buffer.bind();
         index_buffer.buffer_data(&INDEX_DATA, Usage::StaticDraw);
         // initialize vaos

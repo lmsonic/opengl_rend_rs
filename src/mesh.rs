@@ -6,7 +6,7 @@ use thiserror::Error;
 use xml::{attribute::OwnedAttribute, reader::XmlEvent, EventReader};
 
 use crate::{
-    buffer::{Buffer, BufferType, Usage},
+    buffer::{Buffer, Target, Usage},
     opengl::{IndexSize, OpenGl, Primitive},
     vertex_attributes::{DataType, VertexArrayObject, VertexAttribute},
 };
@@ -463,8 +463,8 @@ struct MeshData {
 impl MeshData {
     fn new() -> Self {
         Self {
-            attrib_array_buffer: Buffer::new(BufferType::ArrayBuffer),
-            index_buffer: Buffer::new(BufferType::IndexBuffer),
+            attrib_array_buffer: Buffer::new(Target::ArrayBuffer),
+            index_buffer: Buffer::new(Target::IndexBuffer),
             vao: VertexArrayObject::new(),
             named_vaos: HashMap::new(),
             commands: Vec::new(),
@@ -686,11 +686,11 @@ impl Mesh {
         mesh_data.attrib_array_buffer.bind();
         mesh_data
             .attrib_array_buffer
-            .reserve_data(attribute_buffer_size as GLsizeiptr, Usage::StaticDraw);
+            .reserve_data_bytes(attribute_buffer_size as GLsizeiptr, Usage::StaticDraw);
 
         for (i, attrib) in parsed_data.attribs.iter().enumerate() {
             let offset = attribute_start_locs[i];
-            mesh_data.attrib_array_buffer.update_data_custom_size(
+            mesh_data.attrib_array_buffer.update_data_bytes(
                 attrib.data.get_bytes(),
                 attrib.byte_size() as isize,
                 offset as isize,
@@ -738,12 +738,12 @@ impl Mesh {
             mesh_data.index_buffer.bind();
             mesh_data
                 .index_buffer
-                .reserve_data(index_buffer_size as GLsizeiptr, Usage::StaticDraw);
+                .reserve_data_bytes(index_buffer_size as GLsizeiptr, Usage::StaticDraw);
 
             // fill in data
             for (i, data) in indices_list.enumerate() {
                 let offset = index_start_locs[i];
-                mesh_data.index_buffer.update_data_custom_size(
+                mesh_data.index_buffer.update_data_bytes(
                     data.data.get_bytes(),
                     data.byte_size() as isize,
                     offset as isize,

@@ -28,7 +28,9 @@ pub fn run_app<A: Application>() {
     window.make_current();
     window.set_key_polling(true);
     window.set_framebuffer_size_polling(true);
+    let (width, heigth) = window.get_size();
     let mut app = A::new(window);
+    app.reshape(width, heigth);
 
     // Loop until the user closes the window
     while !app.window().should_close() {

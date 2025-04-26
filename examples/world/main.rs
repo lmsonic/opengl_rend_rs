@@ -5,19 +5,21 @@ use gl::types::GLsizei;
 use glam::{Mat4, Vec3, Vec4};
 use glfw::{Action, Key, Modifiers, PWindow};
 use opengl_rend::app::{run_app, Application};
+use opengl_rend::buffer::{Buffer, Target, Usage};
 use opengl_rend::matrix_stack::{MatrixStack, PushStack};
 use opengl_rend::mesh::Mesh;
 use opengl_rend::opengl::{Capability, ClearFlags, CullMode, DepthFunc, FrontFace, PolygonMode};
-use opengl_rend::program::{GLLocation, Shader, ShaderType};
+use opengl_rend::program::{GLBlockIndex, GLLocation, Shader, ShaderType};
 use opengl_rend::{opengl::OpenGl, program::Program};
 
 struct ProgramData {
     program: Program,
     model_to_world_matrix_uniform: GLLocation,
-    world_to_camera_matrix_uniform: GLLocation,
-    camera_to_clip_matrix_uniform: GLLocation,
+    global_matrix_uniform: GLBlockIndex,
     base_color_uniform: GLLocation,
 }
+
+const GLOBAL_MATRICES_BINDING_INDEX: u32 = 0;
 
 fn load_program(vert: &str, frag: &str) -> ProgramData {
     let vert = CString::new(vert).unwrap();
@@ -26,10 +28,11 @@ fn load_program(vert: &str, frag: &str) -> ProgramData {
     let frag_shader = Shader::new(&frag, ShaderType::Fragment).unwrap();
     let mut program = Program::new(&[vert_shader, frag_shader]).unwrap();
 
+    let global_matrix_uniform = program.get_uniform_block_index(c"GlobalMatrices").unwrap();
+    program.uniform_block_binding(global_matrix_uniform, GLOBAL_MATRICES_BINDING_INDEX);
     ProgramData {
         model_to_world_matrix_uniform: program.get_uniform_location(c"modelToWorld").unwrap(),
-        world_to_camera_matrix_uniform: program.get_uniform_location(c"worldToCamera").unwrap(),
-        camera_to_clip_matrix_uniform: program.get_uniform_location(c"cameraToClip").unwrap(),
+        global_matrix_uniform,
         base_color_uniform: program.get_uniform_location(c"baseColor").unwrap_or(-1),
         program,
     }
@@ -150,25 +153,13 @@ struct App {
     cube_tint_mesh: Mesh,
     cylinder_mesh: Mesh,
     look_at_point: bool,
-}
-
-fn set_camera_clip_matrix(data: &mut ProgramData, matrix: Mat4) {
-    data.program.set_used();
-    data.program
-        .set_uniform(data.camera_to_clip_matrix_uniform, matrix);
-    data.program.set_unused();
-}
-fn set_camera_world_matrix(data: &mut ProgramData, matrix: Mat4) {
-    data.program.set_used();
-    data.program
-        .set_uniform(data.world_to_camera_matrix_uniform, matrix);
-    data.program.set_unused();
+    global_matrices_buffer: Buffer<Mat4>,
 }
 
 const PARTHENON_COLUMN_HEIGHT: f32 = 5.0;
 const Z_NEAR: f32 = 0.1;
 const Z_FAR: f32 = 1000.0;
-const FOV: f32 = 90.0;
+const FOV: f32 = 100.0;
 impl App {
     fn draw_parthenon(&mut self, stack: &mut MatrixStack) {
         const PARTHENON_WIDTH: f32 = 14.0;
@@ -396,16 +387,6 @@ impl App {
             self.draw_tree(push.stack, trunk_height, cone_height);
         }
     }
-    fn set_camera_clip_matrices(&mut self, matrix: Mat4) {
-        set_camera_clip_matrix(&mut self.uniform_color, matrix);
-        set_camera_clip_matrix(&mut self.object_color, matrix);
-        set_camera_clip_matrix(&mut self.uniform_color_tint, matrix);
-    }
-    fn set_camera_world_matrices(&mut self, matrix: Mat4) {
-        set_camera_world_matrix(&mut self.uniform_color, matrix);
-        set_camera_world_matrix(&mut self.object_color, matrix);
-        set_camera_world_matrix(&mut self.uniform_color_tint, matrix);
-    }
 
     fn calculate_camera_pos(&self) -> Vec3 {
         let phi = self.camera_spherical_coords.x.to_radians();
@@ -424,16 +405,26 @@ impl Application for App {
 
         // initialize programs
         let uniform_color = load_program(
-            include_str!("only_pos_world_transform.vert"),
+            include_str!("only_pos_world_transformUBO.vert"),
             include_str!("base_color.frag"),
         );
         let object_color = load_program(
-            include_str!("pos_color_world_transform.vert"),
+            include_str!("pos_color_world_transformUBO.vert"),
             include_str!("passthrough_color.frag"),
         );
         let object_color_tint = load_program(
-            include_str!("pos_color_world_transform.vert"),
+            include_str!("pos_color_world_transformUBO.vert"),
             include_str!("base_vertex_color.frag"),
+        );
+
+        let mut global_matrices_buffer = Buffer::new(Target::UniformBuffer);
+        global_matrices_buffer.bind();
+        global_matrices_buffer.reserve_data(2, Usage::StaticDraw);
+        global_matrices_buffer.unbind();
+        global_matrices_buffer.bind_range_bytes(
+            GLOBAL_MATRICES_BINDING_INDEX,
+            0,
+            2 * std::mem::size_of::<Mat4>() as isize,
         );
 
         // enable backface culling
@@ -454,9 +445,7 @@ impl Application for App {
         let cube_tint_mesh = Mesh::new("examples/world/meshes/UnitCubeTint.xml").unwrap();
         let plane_mesh = Mesh::new("examples/world/meshes/UnitPlane.xml").unwrap();
 
-        let (width, height) = window.get_size();
-
-        let mut app = Self {
+        Self {
             gl,
             window,
             uniform_color,
@@ -470,10 +459,8 @@ impl Application for App {
             cube_tint_mesh,
             cube_color_mesh,
             look_at_point: false,
-        };
-
-        app.reshape(width, height);
-        app
+            global_matrices_buffer,
+        }
     }
 
     fn display(&mut self) {
@@ -484,7 +471,9 @@ impl Application for App {
         // Draw
         let camera_position = self.calculate_camera_pos();
         let look_at = Mat4::look_at_rh(camera_position, self.camera_target, Vec3::Y);
-        self.set_camera_world_matrices(look_at);
+        self.global_matrices_buffer.bind();
+        self.global_matrices_buffer.update_data(&[look_at], 1);
+        self.global_matrices_buffer.unbind();
 
         let mut model_matrix = MatrixStack::new();
         {
@@ -509,24 +498,23 @@ impl Application for App {
             push.stack.translate(Vec3::new(20.0, 0.0, -10.0));
             self.draw_parthenon(push.stack);
         }
-        if self.look_at_point {
-            self.gl.disable(Capability::DepthTest);
-            let identity = Mat4::IDENTITY;
-            let push = PushStack::new(&mut model_matrix);
-            let camera_direction = self.camera_target - camera_position;
-            push.stack
-                .translate(Vec3::new(0.0, 0.0, -camera_direction.length()));
-            push.stack.scale(Vec3::ONE);
-            let p = &mut self.object_color;
-            p.program.set_used();
-            p.program
-                .set_uniform(p.model_to_world_matrix_uniform, push.stack.top());
-            p.program
-                .set_uniform(p.world_to_camera_matrix_uniform, identity);
-            self.cube_color_mesh.render(&mut self.gl);
-            p.program.set_unused();
-            self.gl.enable(Capability::DepthTest);
-        }
+        // if self.look_at_point {
+        //     self.gl.disable(Capability::DepthTest);
+
+        //     let push = PushStack::new(&mut model_matrix);
+        //     push.stack.translate(self.camera_target);
+        //     push.stack.scale(Vec3::ONE);
+
+        //     let p = &mut self.object_color;
+        //     p.program.set_used();
+        //     p.program
+        //         .set_uniform(p.model_to_world_matrix_uniform, push.stack.top());
+
+        //     self.cube_color_mesh.render(&mut self.gl);
+        //     p.program.set_unused();
+
+        //     self.gl.enable(Capability::DepthTest);
+        // }
     }
 
     fn keyboard(&mut self, key: Key, action: Action, modifier: Modifiers) {
@@ -576,7 +564,9 @@ impl Application for App {
             Z_FAR,
         );
 
-        self.set_camera_clip_matrices(matrix);
+        self.global_matrices_buffer.bind();
+        self.global_matrices_buffer.update_data(&[matrix], 0);
+        self.global_matrices_buffer.unbind();
 
         self.gl.viewport(0, 0, width as GLsizei, height as GLsizei);
     }

@@ -6,7 +6,7 @@ use std::ffi::CString;
 use gl::types::GLsizei;
 use glfw::{Action, Key, Modifiers, PWindow};
 use opengl_rend::app::{run_app, Application};
-use opengl_rend::buffer::{BufferType, Usage};
+use opengl_rend::buffer::{Target, Usage};
 use opengl_rend::opengl::{ClearFlags, Primitive};
 use opengl_rend::program::{GLLocation, Shader, ShaderType};
 use opengl_rend::vertex_attributes::{DataType, VertexAttribute};
@@ -66,7 +66,7 @@ impl Application for App {
         let frag_shader = Shader::new(&frag_str, ShaderType::Fragment).unwrap();
         let mut program = Program::new(&[vert_shader, frag_shader]).unwrap();
 
-        let mut vertex_buffer = Buffer::new(BufferType::ArrayBuffer);
+        let mut vertex_buffer = Buffer::new(Target::ArrayBuffer);
         vertex_buffer.bind();
         vertex_buffer.buffer_data(&VERTEX_DATA, Usage::StreamDraw);
 
