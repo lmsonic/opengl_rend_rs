@@ -152,14 +152,23 @@ struct App {
     look_at_point: bool,
 }
 
-fn set_camera_matrix(data: &mut ProgramData, matrix: Mat4) {
+fn set_camera_clip_matrix(data: &mut ProgramData, matrix: Mat4) {
     data.program.set_used();
     data.program
         .set_uniform(data.camera_to_clip_matrix_uniform, matrix);
     data.program.set_unused();
 }
+fn set_camera_world_matrix(data: &mut ProgramData, matrix: Mat4) {
+    data.program.set_used();
+    data.program
+        .set_uniform(data.world_to_camera_matrix_uniform, matrix);
+    data.program.set_unused();
+}
 
 const PARTHENON_COLUMN_HEIGHT: f32 = 5.0;
+const Z_NEAR: f32 = 0.1;
+const Z_FAR: f32 = 1000.0;
+const FOV: f32 = 90.0;
 impl App {
     fn draw_parthenon(&mut self, stack: &mut MatrixStack) {
         const PARTHENON_WIDTH: f32 = 14.0;
@@ -215,7 +224,7 @@ impl App {
 
         const FRONT_Z: f32 = PARTHENON_LENGTH * 0.5 - 1.0;
         const RIGHT_X: f32 = PARTHENON_WIDTH * 0.5 - 1.0;
-        for i in 0..=(PARTHENON_WIDTH / 2.0) as usize {
+        for i in 0..(PARTHENON_WIDTH / 2.0) as usize {
             {
                 let push = PushStack::new(stack);
                 push.stack.translate(Vec3::new(
@@ -235,7 +244,7 @@ impl App {
                 self.draw_column(push.stack, PARTHENON_COLUMN_HEIGHT);
             }
         }
-        for i in 1..=((PARTHENON_LENGTH - 2.0) / 2.0) as usize {
+        for i in 1..((PARTHENON_LENGTH - 2.0) / 2.0) as usize {
             {
                 let push = PushStack::new(stack);
                 push.stack.translate(Vec3::new(
@@ -366,8 +375,8 @@ impl App {
         {
             // draw treetop
             let push = PushStack::new(stack);
-            push.stack.scale(Vec3::new(3.0, cone_height, 3.0));
             push.stack.translate(Vec3::new(0.0, trunk_height, 0.0));
+            push.stack.scale(Vec3::new(3.0, cone_height, 3.0));
 
             let p = &mut self.uniform_color_tint;
 
@@ -387,10 +396,15 @@ impl App {
             self.draw_tree(push.stack, trunk_height, cone_height);
         }
     }
-    fn set_camera_matrices(&mut self, matrix: Mat4) {
-        set_camera_matrix(&mut self.uniform_color, matrix);
-        set_camera_matrix(&mut self.object_color, matrix);
-        set_camera_matrix(&mut self.uniform_color_tint, matrix);
+    fn set_camera_clip_matrices(&mut self, matrix: Mat4) {
+        set_camera_clip_matrix(&mut self.uniform_color, matrix);
+        set_camera_clip_matrix(&mut self.object_color, matrix);
+        set_camera_clip_matrix(&mut self.uniform_color_tint, matrix);
+    }
+    fn set_camera_world_matrices(&mut self, matrix: Mat4) {
+        set_camera_world_matrix(&mut self.uniform_color, matrix);
+        set_camera_world_matrix(&mut self.object_color, matrix);
+        set_camera_world_matrix(&mut self.uniform_color_tint, matrix);
     }
 
     fn calculate_camera_pos(&self) -> Vec3 {
@@ -440,7 +454,9 @@ impl Application for App {
         let cube_tint_mesh = Mesh::new("examples/world/meshes/UnitCubeTint.xml").unwrap();
         let plane_mesh = Mesh::new("examples/world/meshes/UnitPlane.xml").unwrap();
 
-        Self {
+        let (width, height) = window.get_size();
+
+        let mut app = Self {
             gl,
             window,
             uniform_color,
@@ -454,18 +470,21 @@ impl Application for App {
             cube_tint_mesh,
             cube_color_mesh,
             look_at_point: false,
-        }
+        };
+
+        app.reshape(width, height);
+        app
     }
 
     fn display(&mut self) {
-        self.gl.clear_color(0.2, 0.2, 0.2, 0.0);
+        self.gl.clear_color(0.0, 0.0, 0.0, 0.0);
         self.gl.clear_depth(1.0);
         self.gl.clear(ClearFlags::Color | ClearFlags::Depth);
 
         // Draw
         let camera_position = self.calculate_camera_pos();
         let look_at = Mat4::look_at_rh(camera_position, self.camera_target, Vec3::Y);
-        self.set_camera_matrices(look_at);
+        self.set_camera_world_matrices(look_at);
 
         let mut model_matrix = MatrixStack::new();
         {
@@ -483,31 +502,31 @@ impl Application for App {
             self.plane_mesh.render(&mut self.gl);
             program_data.program.set_unused();
         }
-        // self.draw_forest(&mut model_matrix);
-        // {
-        //     // Draw the building
-        //     let push = PushStack::new(&mut model_matrix);
-        //     push.stack.translate(Vec3::new(20.0, 0.0, -10.0));
-        //     self.draw_parthenon(push.stack);
-        // }
-        // if self.look_at_point {
-        //     self.gl.disable(Capability::DepthTest);
-        //     let identity = Mat4::IDENTITY;
-        //     let push = PushStack::new(&mut model_matrix);
-        //     let camera_direction = self.camera_target - camera_position;
-        //     push.stack
-        //         .translate(Vec3::new(0.0, 0.0, -camera_direction.length()));
-        //     push.stack.scale(Vec3::ONE);
-        //     let p = &mut self.object_color;
-        //     p.program.set_used();
-        //     p.program
-        //         .set_uniform(p.model_to_world_matrix_uniform, push.stack.top());
-        //     p.program
-        //         .set_uniform(p.world_to_camera_matrix_uniform, identity);
-        //     self.cube_color_mesh.render(&mut self.gl);
-        //     p.program.set_unused();
-        //     self.gl.enable(Capability::DepthTest);
-        // }
+        self.draw_forest(&mut model_matrix);
+        {
+            // Draw the building
+            let push = PushStack::new(&mut model_matrix);
+            push.stack.translate(Vec3::new(20.0, 0.0, -10.0));
+            self.draw_parthenon(push.stack);
+        }
+        if self.look_at_point {
+            self.gl.disable(Capability::DepthTest);
+            let identity = Mat4::IDENTITY;
+            let push = PushStack::new(&mut model_matrix);
+            let camera_direction = self.camera_target - camera_position;
+            push.stack
+                .translate(Vec3::new(0.0, 0.0, -camera_direction.length()));
+            push.stack.scale(Vec3::ONE);
+            let p = &mut self.object_color;
+            p.program.set_used();
+            p.program
+                .set_uniform(p.model_to_world_matrix_uniform, push.stack.top());
+            p.program
+                .set_uniform(p.world_to_camera_matrix_uniform, identity);
+            self.cube_color_mesh.render(&mut self.gl);
+            p.program.set_unused();
+            self.gl.enable(Capability::DepthTest);
+        }
     }
 
     fn keyboard(&mut self, key: Key, action: Action, modifier: Modifiers) {
@@ -539,8 +558,8 @@ impl Application for App {
                 _ => {}
             }
             self.camera_spherical_coords.y = self.camera_spherical_coords.y.clamp(-78.75, -1.0);
-            self.camera_spherical_coords.z = self.camera_spherical_coords.z.min(5.0);
-            self.camera_target.y = self.camera_target.y.min(0.0);
+            self.camera_spherical_coords.z = self.camera_spherical_coords.z.clamp(-5.0, 5.0);
+            self.camera_target.y = self.camera_target.y.max(0.0);
             let position = self.calculate_camera_pos();
             println!("Target {}", self.camera_target);
             println!("Absolute Position {}", position);
@@ -550,16 +569,14 @@ impl Application for App {
     }
 
     fn reshape(&mut self, width: i32, height: i32) {
-        const Z_NEAR: f32 = 0.1;
-        const Z_FAR: f32 = 100.0;
         let matrix = Mat4::perspective_rh_gl(
-            f32::to_radians(100.0),
+            f32::to_radians(FOV),
             width as f32 / height as f32,
             Z_NEAR,
             Z_FAR,
         );
 
-        self.set_camera_matrices(matrix);
+        self.set_camera_clip_matrices(matrix);
 
         self.gl.viewport(0, 0, width as GLsizei, height as GLsizei);
     }
