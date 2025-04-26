@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs::File, io::BufReader, ops::Deref, path::Path, str::FromStr};
+use std::{collections::HashMap, fs::File, io::BufReader, path::Path, str::FromStr};
 
 use gl::types::{GLbyte, GLfloat, GLint, GLshort, GLsizeiptr, GLubyte, GLuint, GLushort};
 use glam::bool;
@@ -333,6 +333,7 @@ fn process_vao(
     Ok((name, attributes))
 }
 
+#[derive(Debug)]
 struct IndicesData {
     index_size: IndexSize,
     data: IndicesValues,
@@ -364,9 +365,10 @@ impl IndicesData {
         self.data.len() * self.index_size.size()
     }
 }
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 enum RenderCommand {
     Indexed {
+        indexes: IndicesData,
         primitive: Primitive,
         count: GLint,
         index_size: IndexSize,
@@ -394,45 +396,45 @@ fn parse_primitive(s: &str) -> MeshResult<Primitive> {
 }
 
 impl RenderCommand {
-    fn new(name: &str, attributes: &[OwnedAttribute]) -> MeshResult<Self> {
+    fn arrays(attributes: &[OwnedAttribute]) -> MeshResult<Self> {
         let primitive = find_attribute(attributes, "cmd")?;
         let primitive = parse_primitive(&primitive)?;
-        match name {
-            "indices" => {
-                let primitive_restart = find_attribute(attributes, "prim-restart")
-                    .ok()
-                    .and_then(|s| s.parse::<GLuint>().ok());
 
-                // count, index size, and offset will filled out lated
-                Ok(RenderCommand::Indexed {
-                    primitive,
-                    primitive_restart,
-                    count: 0,
-                    index_size: IndexSize::UnsignedInt,
-                    offset: 0,
-                })
-            }
-            "arrays" => {
-                let start = find_attribute_parse::<GLint>(attributes, "start")?;
-                if start < 0 {
-                    return Err(MeshError::InvalidArrayStart(start));
-                }
-
-                let end = find_attribute_parse::<GLint>(attributes, "end")?;
-                if end <= 0 {
-                    return Err(MeshError::InvalidArrayCount(end));
-                }
-                Ok(RenderCommand::Array {
-                    primitive,
-                    start,
-                    end,
-                })
-            }
-            s => Err(MeshError::InvalidCommandAttribute(s.to_owned())),
+        let start = find_attribute_parse::<GLint>(attributes, "start")?;
+        if start < 0 {
+            return Err(MeshError::InvalidArrayStart(start));
         }
+
+        let end = find_attribute_parse::<GLint>(attributes, "end")?;
+        if end <= 0 {
+            return Err(MeshError::InvalidArrayCount(end));
+        }
+        Ok(RenderCommand::Array {
+            primitive,
+            start,
+            end,
+        })
+    }
+    fn indices(attributes: &[OwnedAttribute], indexes: IndicesData) -> MeshResult<Self> {
+        let primitive = find_attribute(attributes, "cmd")?;
+        let primitive = parse_primitive(&primitive)?;
+
+        let primitive_restart = find_attribute(attributes, "prim-restart")
+            .ok()
+            .and_then(|s| s.parse::<GLuint>().ok());
+
+        // count, index size, and offset will filled out lated
+        Ok(RenderCommand::Indexed {
+            primitive,
+            primitive_restart,
+            count: indexes.data.len() as i32,
+            index_size: indexes.index_size,
+            offset: 0,
+            indexes,
+        })
     }
 
-    fn render(self, gl: &mut OpenGl) {
+    fn render(&mut self, gl: &mut OpenGl) {
         match self {
             RenderCommand::Indexed {
                 primitive,
@@ -440,12 +442,12 @@ impl RenderCommand {
                 index_size,
                 offset,
                 ..
-            } => gl.draw_elements(primitive, count, index_size, offset),
+            } => gl.draw_elements(*primitive, *count, *index_size, *offset),
             RenderCommand::Array {
                 primitive,
                 start,
                 end,
-            } => gl.draw_arrays(primitive, start, end),
+            } => gl.draw_arrays(*primitive, *start, *end),
         }
     }
 }
@@ -468,6 +470,15 @@ impl MeshData {
             commands: Vec::new(),
         }
     }
+    fn indices(&self) -> Vec<&IndicesData> {
+        self.commands
+            .iter()
+            .filter_map(|cmd| match cmd {
+                RenderCommand::Indexed { indexes, .. } => Some(indexes),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    }
 }
 
 pub struct Mesh {
@@ -476,16 +487,26 @@ pub struct Mesh {
 
 struct ParsedData {
     attribs: Vec<Attribute>,
-    indices_list: Vec<IndicesData>,
     named_vao_list: Vec<(String, Vec<GLuint>)>,
     commands: Vec<RenderCommand>,
+}
+
+impl ParsedData {
+    fn indices(&self) -> std::vec::Vec<&IndicesData> {
+        self.commands
+            .iter()
+            .filter_map(|cmd| match cmd {
+                RenderCommand::Indexed { indexes, .. } => Some(indexes),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    }
 }
 
 impl Mesh {
     fn parse_xml(path: impl AsRef<Path>) -> MeshResult<ParsedData> {
         let mut attribs: Vec<Attribute> = Vec::with_capacity(16);
         // Map from Attribute indices to the indices in the attribs vector just created [0,16]
-        let mut indices_list: Vec<IndicesData> = vec![];
         let mut named_vao_list: Vec<(String, Vec<GLuint>)> = vec![];
         let mut commands: Vec<RenderCommand> = vec![];
 
@@ -549,14 +570,14 @@ impl Mesh {
                                         };
                                     }
 
-                                    _ => {
-                                        // assumes either arrays or indices i guess?
-                                        let primitive = RenderCommand::new(&name, &attributes)?;
-                                        if let RenderCommand::Indexed { .. } = primitive {
-                                            parser_state = ParserState::InIndicesTag { attributes };
-                                        }
-                                        commands.push(primitive);
+                                    "arrays" => {
+                                        let command = RenderCommand::arrays(&attributes)?;
+                                        commands.push(command);
                                     }
+                                    "indices" => {
+                                        parser_state = ParserState::InIndicesTag { attributes };
+                                    }
+                                    _ => {}
                                 }
                             }
                             2 => {
@@ -588,7 +609,8 @@ impl Mesh {
                         }
                         ParserState::InIndicesTag { attributes } => {
                             let data = IndicesData::new(&attributes, &data)?;
-                            indices_list.push(data);
+                            let command = RenderCommand::indices(&attributes, data)?;
+                            commands.push(command);
                             parser_state = ParserState::Initial;
                         }
                         _ => {}
@@ -618,7 +640,6 @@ impl Mesh {
         }
         Ok(ParsedData {
             attribs,
-            indices_list,
             named_vao_list,
             commands,
         })
@@ -694,9 +715,14 @@ impl Mesh {
         mesh_data.vao.unbind();
 
         // calculate index buffer size
+        let indices_list = mesh_data.commands.iter().filter_map(|cmd| match cmd {
+            RenderCommand::Indexed { indexes, .. } => Some(indexes),
+            _ => None,
+        });
+
         let mut index_buffer_size = 0;
-        let mut index_start_locs = Vec::with_capacity(parsed_data.indices_list.len());
-        for data in &parsed_data.indices_list {
+        let mut index_start_locs = vec![];
+        for data in indices_list.clone() {
             index_buffer_size = if index_buffer_size % 16 != 0 {
                 index_buffer_size + (16 - index_buffer_size % 16)
             } else {
@@ -715,7 +741,7 @@ impl Mesh {
                 .reserve_data(index_buffer_size as GLsizeiptr, Usage::StaticDraw);
 
             // fill in data
-            for (i, data) in parsed_data.indices_list.iter().enumerate() {
+            for (i, data) in indices_list.enumerate() {
                 let offset = index_start_locs[i];
                 mesh_data.index_buffer.update_data_custom_size(
                     data.data.get_bytes(),
@@ -728,17 +754,8 @@ impl Mesh {
             // How to deal with arrays commands thou?
             let mut i = 0;
             for commands in &mut mesh_data.commands {
-                if let RenderCommand::Indexed {
-                    ref mut count,
-                    ref mut index_size,
-                    ref mut offset,
-                    ..
-                } = commands
-                {
+                if let RenderCommand::Indexed { ref mut offset, .. } = commands {
                     *offset = index_start_locs[i];
-                    *count = parsed_data.indices_list[i].data.len() as GLint;
-                    *index_size = parsed_data.indices_list[i].index_size;
-
                     i += 1;
                 }
             }
@@ -754,7 +771,7 @@ impl Mesh {
     }
     pub fn render(&mut self, gl: &mut OpenGl) {
         self.mesh_data.vao.bind();
-        for cmd in &self.mesh_data.commands {
+        for cmd in &mut self.mesh_data.commands {
             cmd.render(gl);
         }
         self.mesh_data.vao.unbind();
@@ -770,7 +787,7 @@ impl Mesh {
         };
 
         vao.bind();
-        for cmd in &self.mesh_data.commands {
+        for cmd in &mut self.mesh_data.commands {
             cmd.render(gl);
         }
         vao.unbind();
@@ -878,8 +895,9 @@ mod test {
         );
 
         // testing indices
-        assert_eq!(parsed_xml.indices_list.len(), 1);
-        let indices = &parsed_xml.indices_list[0];
+        let indices_list: Vec<_> = parsed_xml.indices();
+        assert_eq!(indices_list.len(), 1);
+        let indices = &indices_list[0];
 
         let data = IndicesValues::UnsignedShort(vec![0, 1, 2, 0, 2, 1, 2, 3, 0, 2, 0, 3]);
 
@@ -918,8 +936,9 @@ mod test {
         );
 
         // testing indices
-        assert_eq!(parsed_xml.indices_list.len(), 1);
-        let indices = &parsed_xml.indices_list[0];
+        let indices_list: Vec<_> = parsed_xml.indices();
+        assert_eq!(indices_list.len(), 1);
+        let indices = &indices_list[0];
         assert_eq!(indices.index_size, IndexSize::UnsignedShort);
         let data = IndicesValues::UnsignedShort(vec![
             0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4, 8, 9, 10, 10, 11, 8, 12, 13, 14, 14, 15, 12, 16,
@@ -1053,8 +1072,10 @@ mod test {
             data,
         );
         // testing indices
-        assert_eq!(parsed_xml.indices_list.len(), 2);
-        let indices = &parsed_xml.indices_list[0];
+        let indices_list: Vec<_> = parsed_xml.indices();
+
+        assert_eq!(indices_list.len(), 2);
+        let indices = &indices_list[0];
         assert_eq!(indices.index_size, IndexSize::UnsignedShort);
         let data = IndicesValues::UnsignedShort(vec![
             0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
@@ -1063,7 +1084,7 @@ mod test {
 
         test_indices(indices, IndexSize::UnsignedShort, data);
 
-        let indices = &parsed_xml.indices_list[1];
+        let indices = &indices_list[1];
         let data = IndicesValues::UnsignedShort(vec![
             31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10,
             9, 8, 7, 6, 5, 4, 3, 2, 1, 30,
@@ -1121,8 +1142,10 @@ mod test {
         );
 
         // testing indices
-        assert_eq!(parsed_xml.indices_list.len(), 1);
-        let indices = &parsed_xml.indices_list[0];
+        let indices_list: Vec<_> = parsed_xml.indices();
+
+        assert_eq!(indices_list.len(), 1);
+        let indices = &indices_list[0];
         let data = IndicesValues::UnsignedShort(vec![
             0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4, 8, 9, 10, 10, 11, 8, 12, 13, 14, 14, 15, 12, 16,
             17, 18, 18, 19, 16, 20, 21, 22, 22, 23, 20,
@@ -1272,8 +1295,10 @@ mod test {
             data,
         );
         // testing indices
-        assert_eq!(parsed_xml.indices_list.len(), 2);
-        let indices = &parsed_xml.indices_list[0];
+        let indices_list: Vec<_> = parsed_xml.indices();
+
+        assert_eq!(indices_list.len(), 2);
+        let indices = &indices_list[0];
         assert_eq!(indices.index_size, IndexSize::UnsignedShort);
         let data = IndicesValues::UnsignedShort(vec![
             0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
@@ -1281,7 +1306,7 @@ mod test {
         ]);
         test_indices(indices, IndexSize::UnsignedShort, data);
 
-        let indices = &parsed_xml.indices_list[1];
+        let indices = &indices_list[1];
         let data = IndicesValues::UnsignedShort(vec![
             31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10,
             9, 8, 7, 6, 5, 4, 3, 2, 1, 30,
@@ -1337,8 +1362,10 @@ mod test {
         );
 
         // testing indices
-        assert_eq!(parsed_xml.indices_list.len(), 1);
-        let indices = &parsed_xml.indices_list[0];
+        let indices_list: Vec<_> = parsed_xml.indices();
+
+        assert_eq!(indices_list.len(), 1);
+        let indices = &indices_list[0];
         let data = IndicesValues::UnsignedShort(vec![
             0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4, 8, 9, 10, 10, 11, 8, 12, 13, 14, 14, 15, 12, 16,
             17, 18, 18, 19, 16, 20, 21, 22, 22, 23, 20,
