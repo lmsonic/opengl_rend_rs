@@ -141,13 +141,13 @@ struct MatrixStack {
 }
 
 impl MatrixStack {
-    fn new() -> Self {
+    const fn new() -> Self {
         Self {
             current_matrix: Mat4::IDENTITY,
             stack: vec![],
         }
     }
-    fn top(&self) -> glam::Mat4 {
+    const fn top(&self) -> glam::Mat4 {
         self.current_matrix
     }
     fn push(&mut self) {
@@ -228,7 +228,7 @@ struct Transform {
 }
 
 impl Transform {
-    fn new(position: Vec3, rotation: Vec3, scale: Vec3) -> Self {
+    const fn new(position: Vec3, rotation: Vec3, scale: Vec3) -> Self {
         Self {
             position,
             rotation,

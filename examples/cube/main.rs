@@ -6,7 +6,7 @@ use gl::types::GLsizei;
 use glfw::{Action, Key, Modifiers, PWindow};
 use opengl_rend::app::{run_app, Application};
 use opengl_rend::buffer::{Target, Usage};
-use opengl_rend::opengl::{Capability, ClearFlags, CullMode, Primitive, FrontFace};
+use opengl_rend::opengl::{Capability, ClearFlags, CullMode, FrontFace, Primitive};
 use opengl_rend::program::{GLLocation, Shader, ShaderType};
 use opengl_rend::vertex_attributes::{DataType, VertexAttribute};
 use opengl_rend::{
@@ -128,7 +128,7 @@ const VERTEX_DATA: [f32;288] = [
 ];
 
 impl Application for App {
-    fn new(mut window: PWindow) -> App {
+    fn new(mut window: PWindow) -> Self {
         let mut gl = OpenGl::new(&mut window);
 
         // initialize program

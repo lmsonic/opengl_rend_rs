@@ -6,7 +6,7 @@ use glfw::{Action, Key, Modifiers, PWindow};
 use opengl_rend::app::{run_app, Application};
 use opengl_rend::buffer::{Target, Usage};
 use opengl_rend::opengl::{
-    Capability, ClearFlags, CullMode, DepthFunc, Primitive, FrontFace, IndexSize,
+    Capability, ClearFlags, CullMode, DepthFunc, FrontFace, IndexSize, Primitive,
 };
 use opengl_rend::program::{GLLocation, Shader, ShaderType};
 use opengl_rend::vertex_attributes::{DataType, VertexAttribute};
@@ -158,7 +158,7 @@ const INDEX_DATA: [u32;24] =[
 ];
 
 impl Application for App {
-    fn new(mut window: PWindow) -> App {
+    fn new(mut window: PWindow) -> Self {
         let mut gl = OpenGl::new(&mut window);
 
         // initialize program
@@ -269,7 +269,7 @@ impl Application for App {
     }
 
     fn keyboard(&mut self, key: Key, action: Action, _modifier: Modifiers) {
-        if let (Key::Space, Action::Press) = (key, action) {
+        if (key, action) == (Key::Space, Action::Press) {
             if self.depth_clamping {
                 self.gl.disable(Capability::DepthClamp);
             } else {

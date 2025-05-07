@@ -498,23 +498,23 @@ impl Application for App {
             push.stack.translate(Vec3::new(20.0, 0.0, -10.0));
             self.draw_parthenon(push.stack);
         }
-        // if self.look_at_point {
-        //     self.gl.disable(Capability::DepthTest);
+        if self.look_at_point {
+            self.gl.disable(Capability::DepthTest);
 
-        //     let push = PushStack::new(&mut model_matrix);
-        //     push.stack.translate(self.camera_target);
-        //     push.stack.scale(Vec3::ONE);
+            let push = PushStack::new(&mut model_matrix);
+            push.stack.translate(self.camera_target);
+            push.stack.scale(Vec3::ONE);
 
-        //     let p = &mut self.object_color;
-        //     p.program.set_used();
-        //     p.program
-        //         .set_uniform(p.model_to_world_matrix_uniform, push.stack.top());
+            let p = &mut self.object_color;
+            p.program.set_used();
+            p.program
+                .set_uniform(p.model_to_world_matrix_uniform, push.stack.top());
 
-        //     self.cube_color_mesh.render(&mut self.gl);
-        //     p.program.set_unused();
+            self.cube_color_mesh.render(&mut self.gl);
+            p.program.set_unused();
 
-        //     self.gl.enable(Capability::DepthTest);
-        // }
+            self.gl.enable(Capability::DepthTest);
+        }
     }
 
     fn keyboard(&mut self, key: Key, action: Action, modifier: Modifiers) {

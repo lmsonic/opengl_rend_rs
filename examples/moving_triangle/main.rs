@@ -57,7 +57,7 @@ impl App {
 }
 
 impl Application for App {
-    fn new(mut window: PWindow) -> App {
+    fn new(mut window: PWindow) -> Self {
         let gl = OpenGl::new(&mut window);
 
         let vert_str = CString::new(include_str!("vert.vert")).unwrap();
@@ -88,11 +88,11 @@ impl Application for App {
         program.set_unused();
         let elapsed_time_location = program.get_uniform_location(c"time").unwrap();
         Self {
+            window,
             gl,
             program,
             vertex_array_object,
-            vertex_buffer, // needs to be around if not it gets dropped
-            window,
+            vertex_buffer,
             elapsed_time_location,
         }
     }
