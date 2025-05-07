@@ -52,6 +52,7 @@ impl<T: Default> Drop for Buffer<T> {
 }
 
 impl<T: Default> Buffer<T> {
+    #[must_use]
     pub fn new(target: Target) -> Self {
         let mut id = NULL_HANDLE;
         unsafe { gl::GenBuffers(1, &mut id) };
@@ -69,7 +70,7 @@ impl<T: Default> Buffer<T> {
                 size_bytes as isize,
                 std::ptr::null(),
                 usage as GLenum,
-            )
+            );
         };
     }
     pub fn reserve_data_bytes(&mut self, size: GLsizeiptr, usage: Usage) {
@@ -79,7 +80,7 @@ impl<T: Default> Buffer<T> {
                 size,
                 std::ptr::null(),
                 usage as GLenum,
-            )
+            );
         };
     }
 
@@ -88,9 +89,9 @@ impl<T: Default> Buffer<T> {
             gl::BufferData(
                 self.target as GLenum,
                 std::mem::size_of_val(data) as isize,
-                data.as_ptr() as *const _,
+                data.as_ptr().cast(),
                 usage as GLenum,
-            )
+            );
         };
     }
     pub fn get_data(&mut self, offset: isize, size: usize) -> Vec<T> {
@@ -107,8 +108,8 @@ impl<T: Default> Buffer<T> {
                 self.target as GLenum,
                 offset_bytes as GLintptr,
                 size_bytes as isize,
-                data.as_mut_ptr() as _,
-            )
+                data.as_mut_ptr().cast(),
+            );
         };
         data
     }
@@ -120,24 +121,19 @@ impl<T: Default> Buffer<T> {
                 self.target as GLenum,
                 offset_bytes as GLintptr,
                 std::mem::size_of_val(data) as isize,
-                data.as_ptr() as *const _,
-            )
+                data.as_ptr().cast(),
+            );
         };
     }
 
     pub fn update_data_bytes(&mut self, data: &[u8], size: GLsizeiptr, offset: GLintptr) {
         unsafe {
-            gl::BufferSubData(
-                self.target as GLenum,
-                offset,
-                size,
-                data.as_ptr() as *const _,
-            )
+            gl::BufferSubData(self.target as GLenum, offset, size, data.as_ptr().cast());
         };
     }
 
     pub fn bind_range(&mut self, binding_index: GLuint, offset: isize, size: usize) {
-        assert!(
+        debug_assert!(
             self.target == Target::AtomicCounterBuffer
                 || self.target == Target::TransformFeedbackBuffer
                 || self.target == Target::UniformBuffer
@@ -153,11 +149,11 @@ impl<T: Default> Buffer<T> {
                 self.id,
                 offset_bytes as GLsizeiptr,
                 size_bytes as GLsizeiptr,
-            )
+            );
         };
     }
     pub fn bind_range_bytes(&mut self, binding_index: GLuint, offset: GLintptr, size: GLsizeiptr) {
-        assert!(
+        debug_assert!(
             self.target == Target::AtomicCounterBuffer
                 || self.target == Target::TransformFeedbackBuffer
                 || self.target == Target::UniformBuffer

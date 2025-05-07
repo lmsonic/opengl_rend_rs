@@ -86,6 +86,7 @@ impl Program {
     }
 
     #[allow(private_bounds)]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn set_uniform<T: SetUniform>(&mut self, location: GLint, value: T) {
         value.set_uniform(location);
     }
@@ -144,7 +145,7 @@ impl Shader {
         unsafe { gl::CompileShader(shader.id) };
 
         if let Some(error) = shader.get_compile_error() {
-            eprintln!("Compile failure in {shader_type:?} shader:\n{:?}", error);
+            eprintln!("Compile failure in {shader_type:?} shader:\n{error:?}");
             return Err(error);
         }
         Ok(shader)

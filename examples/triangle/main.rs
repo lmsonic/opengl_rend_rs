@@ -33,7 +33,7 @@ const VERTEX_DATA: [f32; 24] = [
 ];
 
 impl Application for App {
-    fn new(mut window: PWindow) -> App {
+    fn new(mut window: PWindow) -> Self {
         let gl = OpenGl::new(&mut window);
 
         let vert_str = CString::new(include_str!("vert.vert")).unwrap();

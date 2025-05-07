@@ -241,7 +241,7 @@ impl Hierarchy {
     const STANDARD_ANGLE_INCREMENT: f32 = 11.25;
     const SMALL_ANGLE_INCREMENT: f32 = 9.0;
 
-    fn new() -> Self {
+    const fn new() -> Self {
         Self {
             stack: MatrixStack::new(),
             base_pos: Vec3::new(3.0, -5.0, -40.0),
@@ -299,7 +299,7 @@ impl Hierarchy {
         } else {
             self.wrist_pitch_ang -= Self::STANDARD_ANGLE_INCREMENT;
         }
-        self.wrist_pitch_ang %= 360.0
+        self.wrist_pitch_ang %= 360.0;
     }
     fn increment_wrist_roll(&mut self, positive: bool) {
         if positive {
@@ -307,7 +307,7 @@ impl Hierarchy {
         } else {
             self.wrist_roll_ang -= Self::STANDARD_ANGLE_INCREMENT;
         }
-        self.wrist_roll_ang %= 360.0
+        self.wrist_roll_ang %= 360.0;
     }
 
     fn increment_finger_ang(&mut self, positive: bool) {
@@ -490,7 +490,7 @@ impl Hierarchy {
 }
 
 impl Application for App {
-    fn new(mut window: PWindow) -> App {
+    fn new(mut window: PWindow) -> Self {
         let mut gl = OpenGl::new(&mut window);
 
         // initialize program

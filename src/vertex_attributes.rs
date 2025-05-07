@@ -19,30 +19,30 @@ pub enum DataType {
 impl From<IndexSize> for DataType {
     fn from(value: IndexSize) -> Self {
         match value {
-            IndexSize::UnsignedByte => DataType::UnsignedByte,
-            IndexSize::UnsignedShort => DataType::UnsignedShort,
-            IndexSize::UnsignedInt => DataType::UnsignedInt,
+            IndexSize::UnsignedByte => Self::UnsignedByte,
+            IndexSize::UnsignedShort => Self::UnsignedShort,
+            IndexSize::UnsignedInt => Self::UnsignedInt,
         }
     }
 }
 
 impl DataType {
-    pub fn size(&self) -> usize {
+    #[must_use]
+    pub const fn size(&self) -> usize {
         match self {
-            DataType::Byte | DataType::UnsignedByte => 1,
-            DataType::Short | DataType::UnsignedShort => 2,
-            DataType::Int | DataType::UnsignedInt => 4,
-            DataType::Double => 8,
-            DataType::Float => 4,
-            DataType::Fixed => 2,
+            Self::Byte | Self::UnsignedByte => 1,
+            Self::Short | Self::UnsignedShort | Self::Fixed => 2,
+            Self::Int | Self::UnsignedInt | Self::Float => 4,
+            Self::Double => 8,
         }
     }
+    #[must_use]
     pub fn is_floating_point(self) -> bool {
-        self == DataType::Float || self == DataType::Double || self == DataType::Fixed
+        self == Self::Float || self == Self::Double || self == Self::Fixed
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct VertexAttribute {
     pub components: GLint,
     pub data_type: DataType,
@@ -50,7 +50,8 @@ pub struct VertexAttribute {
 }
 
 impl VertexAttribute {
-    pub fn new(components: GLint, data_type: DataType, normalized: bool) -> Self {
+    #[must_use]
+    pub const fn new(components: GLint, data_type: DataType, normalized: bool) -> Self {
         Self {
             components,
             data_type,
@@ -58,10 +59,12 @@ impl VertexAttribute {
         }
     }
 
-    pub fn size(&self) -> usize {
+    #[must_use]
+    pub const fn size(&self) -> usize {
         self.data_type.size() * self.components as usize
     }
 
+    #[must_use]
     pub fn is_floating_point(&self) -> bool {
         self.data_type.is_floating_point()
     }
@@ -77,6 +80,7 @@ impl Drop for VertexArrayObject {
     }
 }
 impl VertexArrayObject {
+    #[must_use]
     pub fn new() -> Self {
         let mut id = NULL_HANDLE;
         unsafe { gl::GenVertexArrays(1, &mut id) };
@@ -135,7 +139,7 @@ impl VertexArrayObject {
                     data_type,
                     stride,
                     pointer as *const _,
-                )
+                );
             };
         }
 

@@ -38,10 +38,10 @@ pub fn run_app<A: Application>() {
         for (_, event) in glfw::flush_messages(&events) {
             match event {
                 glfw::WindowEvent::Key(Key::Escape, _, Action::Press, _) => {
-                    app.window_mut().set_should_close(true)
+                    app.window_mut().set_should_close(true);
                 }
                 glfw::WindowEvent::Key(key, _, action, modifier) => {
-                    app.keyboard(key, action, modifier)
+                    app.keyboard(key, action, modifier);
                 }
 
                 glfw::WindowEvent::FramebufferSize(width, height) => app.reshape(width, height),

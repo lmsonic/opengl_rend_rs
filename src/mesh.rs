@@ -105,36 +105,36 @@ impl VertexAttributeValues {
     }
     fn len(&self) -> usize {
         match self {
-            VertexAttributeValues::Float(items) => items.len(),
-            VertexAttributeValues::UnsignedInt(items) => items.len(),
-            VertexAttributeValues::Int(items) => items.len(),
-            VertexAttributeValues::UnsignedShort(items) => items.len(),
-            VertexAttributeValues::Short(items) => items.len(),
-            VertexAttributeValues::UnsignedByte(items) => items.len(),
-            VertexAttributeValues::Byte(items) => items.len(),
+            Self::Float(items) => items.len(),
+            Self::UnsignedInt(items) => items.len(),
+            Self::Int(items) => items.len(),
+            Self::UnsignedShort(items) => items.len(),
+            Self::Short(items) => items.len(),
+            Self::UnsignedByte(items) => items.len(),
+            Self::Byte(items) => items.len(),
         }
     }
     fn is_empty(&self) -> bool {
         match self {
-            VertexAttributeValues::Float(items) => items.is_empty(),
-            VertexAttributeValues::UnsignedInt(items) => items.is_empty(),
-            VertexAttributeValues::Int(items) => items.is_empty(),
-            VertexAttributeValues::UnsignedShort(items) => items.is_empty(),
-            VertexAttributeValues::Short(items) => items.is_empty(),
-            VertexAttributeValues::UnsignedByte(items) => items.is_empty(),
-            VertexAttributeValues::Byte(items) => items.is_empty(),
+            Self::Float(items) => items.is_empty(),
+            Self::UnsignedInt(items) => items.is_empty(),
+            Self::Int(items) => items.is_empty(),
+            Self::UnsignedShort(items) => items.is_empty(),
+            Self::Short(items) => items.is_empty(),
+            Self::UnsignedByte(items) => items.is_empty(),
+            Self::Byte(items) => items.is_empty(),
         }
     }
 
     fn get_bytes(&self) -> &[u8] {
         match self {
-            VertexAttributeValues::Float(items) => bytemuck::cast_slice(items),
-            VertexAttributeValues::UnsignedInt(items) => bytemuck::cast_slice(items),
-            VertexAttributeValues::Int(items) => bytemuck::cast_slice(items),
-            VertexAttributeValues::UnsignedShort(items) => bytemuck::cast_slice(items),
-            VertexAttributeValues::Short(items) => bytemuck::cast_slice(items),
-            VertexAttributeValues::UnsignedByte(items) => bytemuck::cast_slice(items),
-            VertexAttributeValues::Byte(items) => bytemuck::cast_slice(items),
+            Self::Float(items) => bytemuck::cast_slice(items),
+            Self::UnsignedInt(items) => bytemuck::cast_slice(items),
+            Self::Int(items) => bytemuck::cast_slice(items),
+            Self::UnsignedShort(items) => bytemuck::cast_slice(items),
+            Self::Short(items) => bytemuck::cast_slice(items),
+            Self::UnsignedByte(items) => bytemuck::cast_slice(items),
+            Self::Byte(items) => bytemuck::cast_slice(items),
         }
     }
 }
@@ -183,16 +183,16 @@ impl IndicesValues {
     }
     fn len(&self) -> usize {
         match self {
-            IndicesValues::UnsignedInt(items) => items.len(),
-            IndicesValues::UnsignedShort(items) => items.len(),
-            IndicesValues::UnsignedByte(items) => items.len(),
+            Self::UnsignedInt(items) => items.len(),
+            Self::UnsignedShort(items) => items.len(),
+            Self::UnsignedByte(items) => items.len(),
         }
     }
     fn get_bytes(&self) -> &[u8] {
         match self {
-            IndicesValues::UnsignedInt(items) => bytemuck::cast_slice(items),
-            IndicesValues::UnsignedShort(items) => bytemuck::cast_slice(items),
-            IndicesValues::UnsignedByte(items) => bytemuck::cast_slice(items),
+            Self::UnsignedInt(items) => bytemuck::cast_slice(items),
+            Self::UnsignedShort(items) => bytemuck::cast_slice(items),
+            Self::UnsignedByte(items) => bytemuck::cast_slice(items),
         }
     }
 }
@@ -249,14 +249,11 @@ fn parse_data_type(s: &str) -> MeshResult<(DataType, bool)> {
 }
 
 fn find_attribute(attributes: &[OwnedAttribute], name: &str) -> MeshResult<String> {
-    match attributes
+    attributes
         .iter()
         .find(|a| a.name.local_name == name)
         .map(|a| a.value.clone())
-    {
-        Some(attribute) => Ok(attribute),
-        None => Err(MeshError::NonExistingAttribute(name.to_owned())),
-    }
+        .map_or_else(|| Err(MeshError::NonExistingAttribute(name.to_owned())), Ok)
 }
 
 fn find_attribute_parse<T: FromStr>(
@@ -265,8 +262,7 @@ fn find_attribute_parse<T: FromStr>(
 ) -> Result<T, MeshError>
 // this makes the compiler happy
 where
-    <T as std::str::FromStr>::Err: std::error::Error,
-    <T as std::str::FromStr>::Err: 'static,
+    <T as std::str::FromStr>::Err: std::error::Error + 'static,
 {
     match find_attribute(attributes, name)?.parse::<T>() {
         Ok(attribute) => Ok(attribute),
@@ -409,7 +405,7 @@ impl RenderCommand {
         if end <= 0 {
             return Err(MeshError::InvalidArrayCount(end));
         }
-        Ok(RenderCommand::Array {
+        Ok(Self::Array {
             primitive,
             start,
             end,
@@ -424,7 +420,7 @@ impl RenderCommand {
             .and_then(|s| s.parse::<GLuint>().ok());
 
         // count, index size, and offset will filled out lated
-        Ok(RenderCommand::Indexed {
+        Ok(Self::Indexed {
             primitive,
             primitive_restart,
             count: indexes.data.len() as i32,
@@ -436,14 +432,14 @@ impl RenderCommand {
 
     fn render(&mut self, gl: &mut OpenGl) {
         match self {
-            RenderCommand::Indexed {
+            Self::Indexed {
                 primitive,
                 count,
                 index_size,
                 offset,
                 ..
             } => gl.draw_elements(*primitive, *count, *index_size, *offset),
-            RenderCommand::Array {
+            Self::Array {
                 primitive,
                 start,
                 end,
@@ -475,7 +471,7 @@ impl MeshData {
             .iter()
             .filter_map(|cmd| match cmd {
                 RenderCommand::Indexed { indexes, .. } => Some(indexes),
-                _ => None,
+                RenderCommand::Array { .. } => None,
             })
             .collect::<Vec<_>>()
     }
@@ -497,23 +493,15 @@ impl ParsedData {
             .iter()
             .filter_map(|cmd| match cmd {
                 RenderCommand::Indexed { indexes, .. } => Some(indexes),
-                _ => None,
+                RenderCommand::Array { .. } => None,
             })
             .collect::<Vec<_>>()
     }
 }
 
 impl Mesh {
+    #[allow(clippy::too_many_lines)]
     fn parse_xml(path: impl AsRef<Path>) -> MeshResult<ParsedData> {
-        let mut attribs: Vec<Attribute> = Vec::with_capacity(16);
-        // Map from Attribute indices to the indices in the attribs vector just created [0,16]
-        let mut named_vao_list: Vec<(String, Vec<GLuint>)> = vec![];
-        let mut commands: Vec<RenderCommand> = vec![];
-
-        let path = path.as_ref();
-        let string_path = path.as_os_str().to_string_lossy().to_string();
-        let file = File::open(path)?;
-        let file = BufReader::new(file);
         #[derive(PartialEq, Eq)]
         enum ParserState {
             Initial,
@@ -529,6 +517,16 @@ impl Mesh {
                 attributes: Vec<OwnedAttribute>,
             },
         }
+
+        let mut attribs: Vec<Attribute> = Vec::with_capacity(16);
+        // Map from Attribute indices to the indices in the attribs vector just created [0,16]
+        let mut named_vao_list: Vec<(String, Vec<GLuint>)> = vec![];
+        let mut commands: Vec<RenderCommand> = vec![];
+
+        let path = path.as_ref();
+        let string_path = path.as_os_str().to_string_lossy().to_string();
+        let file = File::open(path)?;
+        let file = BufReader::new(file);
 
         let mut parser_state = ParserState::Initial;
 
@@ -556,9 +554,10 @@ impl Mesh {
                                     && name != "attribute"
                                 {
                                     return Err(MeshError::NoVertexAttributes(string_path));
-                                } else {
-                                    parser_state = ParserState::Initial;
                                 }
+
+                                parser_state = ParserState::Initial;
+
                                 match name.as_str() {
                                     "attribute" => {
                                         parser_state = ParserState::InAttributeTag { attributes };
@@ -670,7 +669,7 @@ impl Mesh {
         // this is trying to calculate how much they need to allocate for attributes
         let mut attribute_buffer_size = 0;
         let mut attribute_start_locs = Vec::with_capacity(parsed_data.attribs.len());
-        for attrib in parsed_data.attribs.iter() {
+        for attrib in &parsed_data.attribs {
             attribute_buffer_size = if attribute_buffer_size % 16 != 0 {
                 // i hate the c++ code i took this from. WTF
                 // i guess it might be alignment?
@@ -717,7 +716,7 @@ impl Mesh {
         // calculate index buffer size
         let indices_list = mesh_data.commands.iter().filter_map(|cmd| match cmd {
             RenderCommand::Indexed { indexes, .. } => Some(indexes),
-            _ => None,
+            RenderCommand::Array { .. } => None,
         });
 
         let mut index_buffer_size = 0;
@@ -776,7 +775,7 @@ impl Mesh {
         }
         self.mesh_data.vao.unbind();
     }
-    pub fn render_mesh(&mut self, mesh_name: String, gl: &mut OpenGl) {
+    pub fn render_mesh(&mut self, mesh_name: &str, gl: &mut OpenGl) {
         let Some((_, vao)) = self
             .mesh_data
             .named_vaos
@@ -839,14 +838,13 @@ mod test {
             return;
         }
         match &attribute.data {
-            VertexAttributeValues::Float(items) => {
-                let data = match data {
-                    VertexAttributeValues::Float(items) => items,
-                    _ => panic!(),
+            VertexAttributeValues::Float(lhs) => {
+                let VertexAttributeValues::Float(rhs) = data else {
+                    panic!()
                 };
-                for (i, attribute) in items.iter().enumerate() {
+                for (i, attribute) in rhs.iter().enumerate() {
                     let a = attribute;
-                    let b = data[i];
+                    let b = lhs[i];
                     assert!((a - b).abs() < f32::EPSILON, "{i}: {a} {b}");
                 }
             }
@@ -854,9 +852,9 @@ mod test {
         }
     }
 
-    fn test_indices(indices: &IndicesData, index_size: IndexSize, data: IndicesValues) {
+    fn test_indices(indices: &IndicesData, index_size: IndexSize, data: &IndicesValues) {
         assert_eq!(indices.index_size, index_size);
-        assert_eq!(indices.data, data);
+        assert_eq!(indices.data, *data);
     }
     fn test_named_vaos(named_vaos: &[(String, Vec<u32>)], expected: &[(&str, Vec<u32>)]) {
         assert_eq!(named_vaos.len(), expected.len());
@@ -901,7 +899,7 @@ mod test {
 
         let data = IndicesValues::UnsignedShort(vec![0, 1, 2, 0, 2, 1, 2, 3, 0, 2, 0, 3]);
 
-        test_indices(indices, IndexSize::UnsignedShort, data);
+        test_indices(indices, IndexSize::UnsignedShort, &data);
 
         assert_eq!(parsed_xml.named_vao_list.len(), 0);
 
@@ -945,7 +943,7 @@ mod test {
             17, 18, 18, 19, 16, 20, 21, 22, 22, 23, 20,
         ]);
 
-        test_indices(indices, IndexSize::UnsignedShort, data);
+        test_indices(indices, IndexSize::UnsignedShort, &data);
 
         assert_eq!(parsed_xml.named_vao_list.len(), 0);
 
@@ -955,6 +953,7 @@ mod test {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn test_cone_parse() {
         let file_path = Path::new(test_case!("UnitCone.xml"));
 
@@ -966,6 +965,7 @@ mod test {
 
         // testing attribute data
         #[allow(clippy::excessive_precision)]
+        #[allow(clippy::unreadable_literal)]
         let data = VertexAttributeValues::Float(vec![
             0.0,
             0.866,
@@ -1082,7 +1082,7 @@ mod test {
             24, 25, 26, 27, 28, 29, 30, 1,
         ]);
 
-        test_indices(indices, IndexSize::UnsignedShort, data);
+        test_indices(indices, IndexSize::UnsignedShort, &data);
 
         let indices = &indices_list[1];
         let data = IndicesValues::UnsignedShort(vec![
@@ -1090,7 +1090,7 @@ mod test {
             9, 8, 7, 6, 5, 4, 3, 2, 1, 30,
         ]);
 
-        test_indices(indices, IndexSize::UnsignedShort, data);
+        test_indices(indices, IndexSize::UnsignedShort, &data);
 
         assert_eq!(parsed_xml.named_vao_list.len(), 0);
 
@@ -1150,7 +1150,7 @@ mod test {
             0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4, 8, 9, 10, 10, 11, 8, 12, 13, 14, 14, 15, 12, 16,
             17, 18, 18, 19, 16, 20, 21, 22, 22, 23, 20,
         ]);
-        test_indices(indices, IndexSize::UnsignedShort, data);
+        test_indices(indices, IndexSize::UnsignedShort, &data);
 
         assert_eq!(parsed_xml.named_vao_list.len(), 0);
 
@@ -1160,6 +1160,7 @@ mod test {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn test_cone_color_parse() {
         let file_path = Path::new(test_case!("UnitConeTint.xml"));
 
@@ -1171,6 +1172,7 @@ mod test {
 
         // testing attribute data
         #[allow(clippy::excessive_precision)]
+        #[allow(clippy::unreadable_literal)]
         let data = VertexAttributeValues::Float(vec![
             0.0,
             0.866,
@@ -1304,14 +1306,14 @@ mod test {
             0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
             24, 25, 26, 27, 28, 29, 30, 1,
         ]);
-        test_indices(indices, IndexSize::UnsignedShort, data);
+        test_indices(indices, IndexSize::UnsignedShort, &data);
 
         let indices = &indices_list[1];
         let data = IndicesValues::UnsignedShort(vec![
             31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10,
             9, 8, 7, 6, 5, 4, 3, 2, 1, 30,
         ]);
-        test_indices(indices, IndexSize::UnsignedShort, data);
+        test_indices(indices, IndexSize::UnsignedShort, &data);
 
         assert_eq!(parsed_xml.named_vao_list.len(), 0);
 
@@ -1370,7 +1372,7 @@ mod test {
             0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4, 8, 9, 10, 10, 11, 8, 12, 13, 14, 14, 15, 12, 16,
             17, 18, 18, 19, 16, 20, 21, 22, 22, 23, 20,
         ]);
-        test_indices(indices, IndexSize::UnsignedShort, data);
+        test_indices(indices, IndexSize::UnsignedShort, &data);
 
         assert_eq!(parsed_xml.named_vao_list.len(), 0);
 
@@ -1423,6 +1425,6 @@ mod test {
         mesh.mesh_data.index_buffer.bind();
         let bytes = mesh.mesh_data.index_buffer.get_data(0, 24);
         let indices: &[u16] = bytemuck::cast_slice(&bytes);
-        assert_eq!(indices, &[0, 1, 2, 0, 2, 1, 2, 3, 0, 2, 0, 3])
+        assert_eq!(indices, &[0, 1, 2, 0, 2, 1, 2, 3, 0, 2, 0, 3]);
     }
 }

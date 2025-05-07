@@ -8,13 +8,13 @@ pub struct MatrixStack {
 }
 
 impl MatrixStack {
-    pub fn new() -> Self {
+    #[must_use] pub const fn new() -> Self {
         Self {
             stack: vec![],
             current_matrix: Mat4::IDENTITY,
         }
     }
-    pub fn with_initial_matrix(mat: Mat4) -> MatrixStack {
+    #[must_use] pub const fn with_initial_matrix(mat: Mat4) -> Self {
         Self {
             stack: vec![],
             current_matrix: mat,
@@ -33,7 +33,7 @@ impl MatrixStack {
             self.current_matrix = *value;
         }
     }
-    pub fn top(&self) -> Mat4 {
+    #[must_use] pub const fn top(&self) -> Mat4 {
         self.current_matrix
     }
     pub fn rotate_rad(&mut self, axis: Vec3, angle_rad: f32) {

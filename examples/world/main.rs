@@ -8,7 +8,7 @@ use opengl_rend::app::{run_app, Application};
 use opengl_rend::buffer::{Buffer, Target, Usage};
 use opengl_rend::matrix_stack::{MatrixStack, PushStack};
 use opengl_rend::mesh::Mesh;
-use opengl_rend::opengl::{Capability, ClearFlags, CullMode, DepthFunc, FrontFace, PolygonMode};
+use opengl_rend::opengl::{Capability, ClearFlags, CullMode, DepthFunc, FrontFace};
 use opengl_rend::program::{GLBlockIndex, GLLocation, Shader, ShaderType};
 use opengl_rend::{opengl::OpenGl, program::Program};
 
@@ -161,11 +161,14 @@ const Z_NEAR: f32 = 0.1;
 const Z_FAR: f32 = 1000.0;
 const FOV: f32 = 100.0;
 impl App {
+    #[allow(clippy::too_many_lines)]
     fn draw_parthenon(&mut self, stack: &mut MatrixStack) {
         const PARTHENON_WIDTH: f32 = 14.0;
         const PARTHENON_LENGTH: f32 = 20.0;
         const PARTHENON_BASE_HEIGHT: f32 = 1.0;
         const PARTHENON_TOP_HEIGHT: f32 = 2.0;
+        const FRONT_Z: f32 = PARTHENON_LENGTH * 0.5 - 1.0;
+        const RIGHT_X: f32 = PARTHENON_WIDTH * 0.5 - 1.0;
         {
             // draw base
             let push = PushStack::new(stack);
@@ -213,13 +216,11 @@ impl App {
             p.program.set_unused();
         }
 
-        const FRONT_Z: f32 = PARTHENON_LENGTH * 0.5 - 1.0;
-        const RIGHT_X: f32 = PARTHENON_WIDTH * 0.5 - 1.0;
         for i in 0..(PARTHENON_WIDTH / 2.0) as usize {
             {
                 let push = PushStack::new(stack);
                 push.stack.translate(Vec3::new(
-                    (2.0 * i as f32) - (PARTHENON_WIDTH / 2.0) + 1.0,
+                    2.0f32.mul_add(i as f32, -(PARTHENON_WIDTH / 2.0)) + 1.0,
                     PARTHENON_BASE_HEIGHT,
                     FRONT_Z,
                 ));
@@ -228,7 +229,7 @@ impl App {
             {
                 let push = PushStack::new(stack);
                 push.stack.translate(Vec3::new(
-                    (2.0 * i as f32) - (PARTHENON_WIDTH / 2.0) + 1.0,
+                    2.0f32.mul_add(i as f32, -(PARTHENON_WIDTH / 2.0)) + 1.0,
                     PARTHENON_BASE_HEIGHT,
                     -FRONT_Z,
                 ));
@@ -241,7 +242,7 @@ impl App {
                 push.stack.translate(Vec3::new(
                     RIGHT_X,
                     PARTHENON_BASE_HEIGHT,
-                    (2.0 * i as f32) - (PARTHENON_LENGTH / 2.0) + 1.0,
+                    2.0f32.mul_add(i as f32, -(PARTHENON_LENGTH / 2.0)) + 1.0,
                 ));
                 self.draw_column(push.stack, PARTHENON_COLUMN_HEIGHT);
             }
@@ -250,7 +251,7 @@ impl App {
                 push.stack.translate(Vec3::new(
                     -RIGHT_X,
                     PARTHENON_BASE_HEIGHT,
-                    (2.0 * i as f32) - (PARTHENON_LENGTH / 2.0) + 1.0,
+                    2.0f32.mul_add(i as f32, -(PARTHENON_LENGTH / 2.0)) + 1.0,
                 ));
                 self.draw_column(push.stack, PARTHENON_COLUMN_HEIGHT);
             }
@@ -278,7 +279,7 @@ impl App {
             let push = PushStack::new(stack);
             push.stack.translate(Vec3::new(
                 0.0,
-                PARTHENON_COLUMN_HEIGHT + PARTHENON_BASE_HEIGHT + PARTHENON_TOP_HEIGHT * 0.5,
+                PARTHENON_TOP_HEIGHT.mul_add(0.5, PARTHENON_COLUMN_HEIGHT + PARTHENON_BASE_HEIGHT),
                 PARTHENON_LENGTH * 0.5,
             ));
             push.stack.rotate_x(-135.0);
@@ -331,8 +332,11 @@ impl App {
             let push = PushStack::new(stack);
             push.stack
                 .translate(Vec3::new(0.0, COLUMN_BASE_HEIGHT, 0.0));
-            push.stack
-                .scale(Vec3::new(0.8, height - COLUMN_BASE_HEIGHT * 2.0, 0.8));
+            push.stack.scale(Vec3::new(
+                0.8,
+                COLUMN_BASE_HEIGHT.mul_add(-2.0, height),
+                0.8,
+            ));
             push.stack.translate(Vec3::new(0.0, 0.5, 0.0));
 
             let p = &mut self.uniform_color_tint;
@@ -392,15 +396,16 @@ impl App {
         let phi = self.camera_spherical_coords.x.to_radians();
         let theta = (self.camera_spherical_coords.y + 90.0).to_radians();
 
-        let (sinp, cosp) = phi.sin_cos();
-        let (sint, cost) = theta.sin_cos();
-        Vec3::new(sint * cosp, cost, sint * sinp) * self.camera_spherical_coords.z
+        let (sin_phi, cos_phi) = phi.sin_cos();
+        let (sin_theta, cos_theta) = theta.sin_cos();
+        Vec3::new(sin_theta * cos_phi, cos_theta, sin_theta * sin_phi)
+            * self.camera_spherical_coords.z
             + self.camera_target
     }
 }
 
 impl Application for App {
-    fn new(mut window: PWindow) -> App {
+    fn new(mut window: PWindow) -> Self {
         let mut gl = OpenGl::new(&mut window);
 
         // initialize programs
@@ -550,7 +555,7 @@ impl Application for App {
             self.camera_target.y = self.camera_target.y.max(0.0);
             let position = self.calculate_camera_pos();
             println!("Target {}", self.camera_target);
-            println!("Absolute Position {}", position);
+            println!("Absolute Position {position}");
             println!("Distance {}", self.camera_target.distance(position));
             println!("Spherical coords {}", self.camera_spherical_coords);
         }

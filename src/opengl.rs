@@ -85,7 +85,7 @@ pub enum Primitive {
     Patches = gl::PATCHES,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum IndexSize {
     UnsignedByte = gl::UNSIGNED_BYTE,
@@ -94,11 +94,12 @@ pub enum IndexSize {
 }
 
 impl IndexSize {
-    pub fn size(self) -> usize {
+    #[must_use]
+    pub const fn size(self) -> usize {
         match self {
-            IndexSize::UnsignedByte => 1,
-            IndexSize::UnsignedShort => 2,
-            IndexSize::UnsignedInt => 4,
+            Self::UnsignedByte => 1,
+            Self::UnsignedShort => 2,
+            Self::UnsignedInt => 4,
         }
     }
 }
@@ -161,6 +162,7 @@ impl AsFloat for f64 {
     }
 }
 
+#[allow(clippy::unreadable_literal)]
 extern "system" fn gl_debug_output(
     source: GLenum,
     type_: GLenum,
@@ -210,8 +212,8 @@ extern "system" fn gl_debug_output(
 
 impl OpenGl {
     pub fn new(window: &mut Window) -> Self {
-        gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
-        let mut gl = OpenGl;
+        gl::load_with(|symbol| window.get_proc_address(symbol).cast());
+        let mut gl = Self;
         gl.setup_debug_context();
         gl
     }
@@ -242,7 +244,7 @@ impl OpenGl {
                     0,
                     ptr::null(),
                     gl::TRUE,
-                )
+                );
             };
         }
     }
@@ -269,7 +271,7 @@ impl OpenGl {
                 count,
                 index_size as GLenum,
                 offset as *const _,
-            )
+            );
         };
     }
 
@@ -288,7 +290,7 @@ impl OpenGl {
                 index_size as GLenum,
                 offset as *const _,
                 base_vertex,
-            )
+            );
         };
     }
 
