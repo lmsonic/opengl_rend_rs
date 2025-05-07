@@ -114,6 +114,7 @@ impl VertexAttributeValues {
             Self::Byte(items) => items.len(),
         }
     }
+    #[allow(dead_code)]
     fn is_empty(&self) -> bool {
         match self {
             Self::Float(items) => items.is_empty(),
@@ -466,6 +467,7 @@ impl MeshData {
             commands: Vec::new(),
         }
     }
+    #[allow(dead_code)]
     fn indices(&self) -> Vec<&IndicesData> {
         self.commands
             .iter()
@@ -488,6 +490,7 @@ struct ParsedData {
 }
 
 impl ParsedData {
+    #[allow(dead_code)]
     fn indices(&self) -> std::vec::Vec<&IndicesData> {
         self.commands
             .iter()
