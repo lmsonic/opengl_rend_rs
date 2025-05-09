@@ -250,6 +250,9 @@ fn parse_data_type(s: &str) -> MeshResult<(DataType, bool)> {
 }
 
 fn find_attribute(attributes: &[OwnedAttribute], name: &str) -> MeshResult<String> {
+    if name == "end" {
+        println!("boh");
+    }
     attributes
         .iter()
         .find(|a| a.name.local_name == name)
@@ -375,7 +378,7 @@ enum RenderCommand {
     Array {
         primitive: Primitive,
         start: GLint,
-        end: GLint,
+        count: GLint,
     },
 }
 
@@ -402,14 +405,14 @@ impl RenderCommand {
             return Err(MeshError::InvalidArrayStart(start));
         }
 
-        let end = find_attribute_parse::<GLint>(attributes, "end")?;
-        if end <= 0 {
-            return Err(MeshError::InvalidArrayCount(end));
+        let count = find_attribute_parse::<GLint>(attributes, "count")?;
+        if count <= 0 {
+            return Err(MeshError::InvalidArrayCount(count));
         }
         Ok(Self::Array {
             primitive,
             start,
-            end,
+            count,
         })
     }
     fn indices(attributes: &[OwnedAttribute], indexes: IndicesData) -> MeshResult<Self> {
@@ -443,8 +446,8 @@ impl RenderCommand {
             Self::Array {
                 primitive,
                 start,
-                end,
-            } => gl.draw_arrays(*primitive, *start, *end),
+                count,
+            } => gl.draw_arrays(*primitive, *start, *count),
         }
     }
 }
